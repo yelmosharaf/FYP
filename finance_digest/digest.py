@@ -10,6 +10,7 @@ import os
 import io
 import xml.etree.ElementTree as ET
 from datetime import datetime
+from xml.sax.saxutils import escape as xml_escape
 
 import requests
 from dotenv import load_dotenv
@@ -324,13 +325,16 @@ def build_pdf(articles: list[dict]) -> bytes:
     data = [header_row]
 
     for idx, art in enumerate(articles, start=1):
-        title_para = Paragraph(art["title"], cell_style)
+        safe_title = xml_escape(art["title"])
+        safe_link = xml_escape(art["link"]) if art["link"] else ""
+        safe_source = xml_escape(art["source"])
+        title_para = Paragraph(safe_title, cell_style)
         link_text = (
-            f'<link href="{art["link"]}">{art["link"][:70]}{"…" if len(art["link"]) > 70 else ""}</link>'
-            if art["link"] else "—"
+            f'<link href="{safe_link}">{safe_link[:70]}{"…" if len(safe_link) > 70 else ""}</link>'
+            if safe_link else "—"
         )
         source_para = Paragraph(
-            f'<b>{art["source"]}</b><br/>{link_text}', link_style
+            f'<b>{safe_source}</b><br/>{link_text}', link_style
         )
         data.append([
             Paragraph(str(idx), cell_style),
