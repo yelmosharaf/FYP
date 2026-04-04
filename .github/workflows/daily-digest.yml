@@ -1,0 +1,30 @@
+name: Daily Finance Digest
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 07:00 UTC every day (adjust to your timezone)
+  workflow_dispatch:        # also allows manual "Run workflow" trigger from GitHub
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests reportlab python-dotenv
+
+      - name: Run digest
+        working-directory: finance_digest
+        env:
+          SENDER_EMAIL:        ${{ secrets.SENDER_EMAIL }}
+          SENDER_APP_PASSWORD: ${{ secrets.SENDER_APP_PASSWORD }}
+          RECIPIENT_EMAIL:     ${{ secrets.RECIPIENT_EMAIL }}
+        run: python digest.py
