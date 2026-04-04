@@ -5,17 +5,11 @@ Fetches equity & credit market articles from RSS feeds,
 generates a PDF table, and emails it to the recipient.
 """
 
+import base64
 import os
 import io
-import smtplib
-import ssl
-import textwrap
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
-from email import encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from datetime import datetime
 
 import requests
 from dotenv import load_dotenv
@@ -39,11 +33,8 @@ load_dotenv()
 # ---------------------------------------------------------------------------
 
 RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "elmusharf@gmail.com")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")        # your Gmail address
-SENDER_APP_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")  # Gmail App Password
-
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587  # STARTTLS — works on Replit and most cloud hosts
+RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")   # get free key at resend.com
+SENDER_FROM     = "Finance Digest <digest@resend.dev>"  # works on Resend free tier
 
 MAX_ARTICLES_PER_SOURCE = 8  # cap per feed to keep digest manageable
 
@@ -391,55 +382,49 @@ def build_pdf(articles: list[dict]) -> bytes:
 # ---------------------------------------------------------------------------
 
 def send_email(pdf_bytes: bytes, article_count: int) -> None:
-    if not SENDER_EMAIL or not SENDER_APP_PASSWORD:
+    if not RESEND_API_KEY:
         raise ValueError(
-            "SENDER_EMAIL and SENDER_APP_PASSWORD must be set in .env"
+            "RESEND_API_KEY is not set. Get a free key at https://resend.com"
         )
 
-    today = datetime.now().strftime("%d %b %Y")
-    subject = f"Finance Digest — {today} ({article_count} articles)"
-
-    msg = MIMEMultipart()
-    msg["From"] = SENDER_EMAIL
-    msg["To"] = RECIPIENT_EMAIL
-    msg["Subject"] = subject
-
-    body = (
-        f"Hi,\n\n"
-        f"Your daily finance digest for {today} is attached.\n\n"
-        f"Today's digest covers {article_count} articles across equity and credit markets.\n\n"
-        f"Sources: Reuters, Yahoo Finance, MarketWatch, CNBC, Investopedia, FT, WSJ, Seeking Alpha\n\n"
-        f"—\nFinance Digest Bot"
-    )
-    msg.attach(MIMEText(body, "plain"))
-
+    today    = datetime.now().strftime("%d %b %Y")
+    subject  = f"Finance Digest — {today} ({article_count} articles)"
     filename = f"finance_digest_{datetime.now().strftime('%Y%m%d')}.pdf"
-    part = MIMEBase("application", "octet-stream")
-    part.set_payload(pdf_bytes)
-    encoders.encode_base64(part)
-    part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
-    msg.attach(part)
 
-    try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-            server.ehlo()
-            server.starttls(context=context)
-            server.ehlo()
-            server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
-            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+    payload = {
+        "from":    SENDER_FROM,
+        "to":      [RECIPIENT_EMAIL],
+        "subject": subject,
+        "text":    (
+            f"Hi,\n\n"
+            f"Your daily finance digest for {today} is attached.\n\n"
+            f"{article_count} articles across equity and credit markets.\n\n"
+            f"— Finance Digest Bot"
+        ),
+        "attachments": [
+            {
+                "filename": filename,
+                "content":  base64.b64encode(pdf_bytes).decode(),
+            }
+        ],
+    }
+
+    resp = requests.post(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": f"Bearer {RESEND_API_KEY}",
+            "Content-Type":  "application/json",
+        },
+        json=payload,
+        timeout=15,
+    )
+
+    if resp.status_code in (200, 201):
         print(f"  Email sent to {RECIPIENT_EMAIL}")
-    except smtplib.SMTPAuthenticationError:
-        print("  [ERROR] Authentication failed.")
-        print("  Make sure you are using a Gmail App Password (not your normal password).")
-        print("  Generate one at: https://myaccount.google.com/apppasswords")
-        raise
-    except smtplib.SMTPException as exc:
-        print(f"  [ERROR] SMTP error: {exc}")
-        raise
-    except Exception as exc:
-        print(f"  [ERROR] Unexpected error sending email: {exc}")
-        raise
+    else:
+        raise RuntimeError(
+            f"Resend API error {resp.status_code}: {resp.text}"
+        )
 
 
 # ---------------------------------------------------------------------------
