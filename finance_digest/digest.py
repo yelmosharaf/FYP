@@ -34,7 +34,7 @@ load_dotenv()
 
 RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "elmusharf@gmail.com")
 RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")   # get free key at resend.com
-SENDER_FROM     = "Finance Digest <digest@resend.dev>"  # works on Resend free tier
+SENDER_FROM     = "Finance Digest <onboarding@resend.dev>"  # Resend free-tier sender
 
 MAX_ARTICLES_PER_SOURCE = 8  # cap per feed to keep digest manageable
 
