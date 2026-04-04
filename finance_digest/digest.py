@@ -6,10 +6,11 @@ generates a PDF table, and emails it to the recipient.
 """
 
 import base64
+import email.utils
 import os
 import io
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from xml.sax.saxutils import escape as xml_escape
 
 import requests
@@ -37,79 +38,50 @@ RECIPIENT_EMAIL = os.getenv("RECIPIENT_EMAIL", "elmusharf@gmail.com")
 RESEND_API_KEY  = os.getenv("RESEND_API_KEY", "")   # get free key at resend.com
 SENDER_FROM     = "Finance Digest <onboarding@resend.dev>"  # Resend free-tier sender
 
-MAX_ARTICLES_PER_SOURCE = 8  # cap per feed to keep digest manageable
+MAX_ARTICLES_PER_SOURCE = 10  # cap per feed
+CUTOFF_DAYS = 30              # ignore articles older than this
 
 # ---------------------------------------------------------------------------
-# RSS Feed definitions  (updated April 2026)
-# Topics: equity markets, credit markets, macro
+# RSS Feed definitions
+# section: "general" = equity/credit markets
+#          "hy"      = high yield & distressed specialists
 # ---------------------------------------------------------------------------
 
 FEEDS = [
-    # Equity / macro
-    {
-        "source": "Reuters Business",
-        "url": "https://feeds.reuters.com/reuters/businessNews",
-        "category": "Equity / Macro",
-    },
-    {
-        "source": "Reuters Markets",
-        "url": "https://feeds.reuters.com/reuters/UKmarkets",
-        "category": "Equity / Macro",
-    },
-    {
-        "source": "Yahoo Finance",
-        "url": "https://finance.yahoo.com/rss/topstories",
-        "category": "Equity / Macro",
-    },
-    {
-        "source": "CNBC Markets",
-        "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
-        "category": "Equity",
-    },
-    {
-        "source": "CNBC Finance",
-        "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
-        "category": "Equity / Macro",
-    },
-    {
-        "source": "MarketWatch",
-        "url": "https://feeds.marketwatch.com/marketwatch/topstories/",
-        "category": "Equity / Macro",
-    },
-    {
-        "source": "Nasdaq News",
-        "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
-        "category": "Equity",
-    },
-    # Credit / fixed income
-    {
-        "source": "WSJ Markets",
-        "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
-        "category": "Equity / Credit",
-    },
-    {
-        "source": "WSJ Economy",
-        "url": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
-        "category": "Credit / Macro",
-    },
-    {
-        "source": "FT Markets",
-        "url": "https://www.ft.com/rss/home/uk",
-        "category": "Equity / Credit",
-    },
-    {
-        "source": "Bloomberg Markets",
-        "url": "https://feeds.bloomberg.com/markets/news.rss",
-        "category": "Equity / Credit",
-    },
-    {
-        "source": "Investopedia",
-        "url": "https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_articles",
-        "category": "Equity / Credit",
-    },
+    # ── General markets ──────────────────────────────────────────────────────
+    {"section": "general", "source": "Yahoo Finance",
+     "url": "https://finance.yahoo.com/rss/topstories"},
+    {"section": "general", "source": "CNBC Markets",
+     "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html"},
+    {"section": "general", "source": "CNBC Finance",
+     "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html"},
+    {"section": "general", "source": "MarketWatch",
+     "url": "https://feeds.marketwatch.com/marketwatch/topstories/"},
+    {"section": "general", "source": "WSJ Markets",
+     "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml"},
+    {"section": "general", "source": "WSJ Business",
+     "url": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml"},
+    {"section": "general", "source": "FT",
+     "url": "https://www.ft.com/rss/home/uk"},
+    {"section": "general", "source": "Bloomberg Markets",
+     "url": "https://feeds.bloomberg.com/markets/news.rss"},
+    {"section": "general", "source": "Reuters Business",
+     "url": "https://feeds.reuters.com/reuters/businessNews"},
+
+    # ── HY & Distressed specialists ───────────────────────────────────────
+    {"section": "hy", "source": "9fin",
+     "url": "https://9fin.com/rss"},
+    {"section": "hy", "source": "Debtwire",
+     "url": "https://www.debtwire.com/info/rss"},
+    {"section": "hy", "source": "Octus (Reorg)",
+     "url": "https://reorg.com/feed/"},
+    {"section": "hy", "source": "Bloomberg Credit",
+     "url": "https://feeds.bloomberg.com/blaw/news.rss"},
+    {"section": "hy", "source": "S&P LCD",
+     "url": "https://www.lcdcomps.com/lcd/rss.html"},
 ]
 
-# Keywords to filter for credit / equity relevance
+# Keywords — general section filter
 CREDIT_KEYWORDS = {
     "credit", "bond", "yield", "spread", "cds", "high yield", "investment grade",
     "ig ", "hy ", "fixed income", "debt", "coupon", "treasury", "bund", "gilt",
@@ -120,6 +92,17 @@ EQUITY_KEYWORDS = {
     "stock", "equit", "share", "market", "s&p", "nasdaq", "dow", "ftse", "dax",
     "nikkei", "hang seng", "earnings", "ipo", "dividend", "buyback", "valuation",
     "pe ratio", "bull", "bear", "rally", "sell-off", "index",
+}
+
+# Keywords — HY/distressed section (articles from any feed matching these
+# also flow into the HY section even if from a general source)
+HY_KEYWORDS = {
+    "high yield", "distressed", "restructur", "bankruptcy", "chapter 11",
+    "chapter 7", "default", "leveraged loan", "leveraged buyout", "lbo",
+    "fallen angel", "ccc", "b-rated", "payment-in-kind", "pik", "covenant",
+    "special situation", "stressed credit", "workout", "debt exchange",
+    "liability management", "lme ", "out-of-court", "in-court",
+    "9fin", "debtwire", "reorg", "octus", "lcd ",
 }
 
 
@@ -195,7 +178,40 @@ def fetch_rss(feed_info: dict) -> list[dict]:
         return items
 
 
-def is_relevant(title: str) -> bool:
+def parse_date(raw: str) -> datetime | None:
+    """Return timezone-aware datetime from an RSS/Atom date string, or None."""
+    raw = raw.strip()
+    if not raw:
+        return None
+    # RFC 2822 (RSS pubDate): "Fri, 04 Apr 2026 07:00:00 +0000"
+    try:
+        return email.utils.parsedate_to_datetime(raw)
+    except Exception:
+        pass
+    # ISO 8601 (Atom): "2026-04-04T07:00:00Z" / "+00:00"
+    for fmt in ("%Y-%m-%dT%H:%M:%S%z", "%Y-%m-%dT%H:%M:%SZ", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(raw, fmt)
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def is_within_cutoff(raw: str) -> bool:
+    dt = parse_date(raw)
+    if dt is None:
+        return True  # keep if we can't parse
+    cutoff = datetime.now(timezone.utc) - timedelta(days=CUTOFF_DAYS)
+    return dt >= cutoff
+
+
+def is_hy(title: str) -> bool:
+    t = title.lower()
+    return any(kw in t for kw in HY_KEYWORDS)
+
+
+def is_general(title: str) -> bool:
     t = title.lower()
     return any(kw in t for kw in EQUITY_KEYWORDS | CREDIT_KEYWORDS)
 
@@ -213,10 +229,22 @@ def classify(title: str) -> str:
     return "Macro"
 
 
-def gather_articles() -> list[dict]:
-    """Pull articles from all feeds, deduplicate by title."""
+def _sort_key(article: dict):
+    """Sort newest-first; articles with no date go to the end."""
+    dt = parse_date(article.get("published", ""))
+    if dt is None:
+        return datetime.min.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def gather_articles() -> tuple[list[dict], list[dict]]:
+    """
+    Returns (general_articles, hy_articles) both sorted newest-first,
+    filtered to the last CUTOFF_DAYS days.
+    """
     seen_titles: set[str] = set()
-    articles: list[dict] = []
+    general: list[dict] = []
+    hy: list[dict] = []
 
     for feed in FEEDS:
         print(f"  Fetching {feed['source']} ...")
@@ -226,24 +254,34 @@ def gather_articles() -> list[dict]:
             title = item.get("title", "").strip()
             if not title or title.lower() in seen_titles:
                 continue
-            if not is_relevant(title):
-                continue
+            pub = item.get("published", "")
+            if not is_within_cutoff(pub):
+                continue  # older than 30 days
             seen_titles.add(title.lower())
-            articles.append({
+
+            art = {
                 "source": feed["source"],
                 "category": classify(title),
                 "title": title,
                 "link": item.get("link", ""),
-                "published": item.get("published", ""),
-            })
+                "published": pub,
+            }
+
+            # HY feeds always go to HY section; general feeds split by keyword
+            if feed["section"] == "hy" or is_hy(title):
+                hy.append(art)
+            elif is_general(title):
+                general.append(art)
+            else:
+                continue  # irrelevant
+
             count += 1
             if count >= MAX_ARTICLES_PER_SOURCE:
                 break
 
-    # Sort: Credit first, then Equity, then others
-    order = {"Credit": 0, "Equity & Credit": 1, "Equity": 2, "Macro": 3}
-    articles.sort(key=lambda a: (order.get(a["category"], 9), a["source"]))
-    return articles
+    general.sort(key=_sort_key, reverse=True)
+    hy.sort(key=_sort_key, reverse=True)
+    return general, hy
 
 
 # ---------------------------------------------------------------------------
@@ -281,8 +319,56 @@ def fmt_date(raw: str) -> str:
     return raw[:10] if raw else "—"
 
 
-def build_pdf(articles: list[dict]) -> bytes:
-    """Render articles into a PDF and return bytes."""
+HY_HEADER_BG = colors.HexColor("#7b2d2d")  # dark red for HY section
+
+
+def _build_article_table(articles: list[dict], styles: dict, start_idx: int = 1) -> Table:
+    """Build a ReportLab Table for a list of articles."""
+    col_widths = [1.0 * cm, 3.0 * cm, 2.6 * cm, 11.2 * cm, 6.5 * cm]
+
+    cell_style = styles["cell"]
+    link_style = styles["link"]
+    header_style = styles["header"]
+
+    headers = ["#", "Category", "Date", "Article Title", "Source & Link"]
+    data = [[Paragraph(h, header_style) for h in headers]]
+
+    for idx, art in enumerate(articles, start=start_idx):
+        safe_title  = xml_escape(art["title"])
+        safe_link   = xml_escape(art["link"]) if art["link"] else ""
+        safe_source = xml_escape(art["source"])
+        link_text = (
+            f'<link href="{safe_link}">{safe_link[:70]}{"…" if len(safe_link) > 70 else ""}</link>'
+            if safe_link else "—"
+        )
+        data.append([
+            Paragraph(str(idx), cell_style),
+            Paragraph(art["category"], cell_style),
+            Paragraph(fmt_date(art.get("published", "")), cell_style),
+            Paragraph(safe_title, cell_style),
+            Paragraph(f'<b>{safe_source}</b><br/>{link_text}', link_style),
+        ])
+
+    table = Table(data, colWidths=col_widths, repeatRows=1)
+    row_styles = [
+        ("BACKGROUND", (0, 0), (-1, 0), styles["header_bg"]),
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ALT_ROW]),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+        ("TOPPADDING",   (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 5),
+    ]
+    for i, art in enumerate(articles, start=1):
+        bg = CATEGORY_COLORS.get(art["category"], colors.white)
+        row_styles.append(("BACKGROUND", (1, i), (1, i), bg))
+    table.setStyle(TableStyle(row_styles))
+    return table
+
+
+def build_pdf(general: list[dict], hy: list[dict]) -> bytes:
+    """Render two-section PDF and return bytes."""
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf,
@@ -293,111 +379,69 @@ def build_pdf(articles: list[dict]) -> bytes:
         bottomMargin=1.5 * cm,
     )
 
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle(
-        "DigestTitle",
-        parent=styles["Title"],
-        fontSize=18,
-        textColor=HEADER_BG,
-        spaceAfter=4,
-    )
-    subtitle_style = ParagraphStyle(
-        "DigestSubtitle",
-        parent=styles["Normal"],
-        fontSize=10,
-        textColor=colors.grey,
-        spaceAfter=12,
-    )
-    cell_style = ParagraphStyle(
-        "Cell",
-        parent=styles["Normal"],
-        fontSize=8,
-        leading=11,
-        wordWrap="CJK",
-    )
-    link_style = ParagraphStyle(
-        "Link",
-        parent=styles["Normal"],
-        fontSize=7,
-        textColor=colors.HexColor("#1155cc"),
-        leading=10,
-    )
-    header_style = ParagraphStyle(
-        "Header",
-        parent=styles["Normal"],
-        fontSize=9,
-        textColor=colors.white,
-        fontName="Helvetica-Bold",
-        alignment=TA_CENTER,
-    )
+    base = getSampleStyleSheet()
+
+    def _para_style(name, **kw):
+        return ParagraphStyle(name, parent=base["Normal"], **kw)
+
+    shared_styles = {
+        "cell": _para_style("Cell", fontSize=8, leading=11, wordWrap="CJK"),
+        "link": _para_style("Link", fontSize=7, textColor=colors.HexColor("#1155cc"), leading=10),
+        "header": _para_style("Hdr", fontSize=9, textColor=colors.white,
+                              fontName="Helvetica-Bold", alignment=TA_CENTER),
+        "header_bg": HEADER_BG,
+    }
+    hy_styles = {**shared_styles,
+                 "header": _para_style("HdrHY", fontSize=9, textColor=colors.white,
+                                       fontName="Helvetica-Bold", alignment=TA_CENTER),
+                 "header_bg": HY_HEADER_BG}
+
+    section_title = _para_style("SecTitle", fontSize=13, fontName="Helvetica-Bold",
+                                textColor=HEADER_BG, spaceBefore=14, spaceAfter=4)
+    hy_section_title = _para_style("SecTitleHY", fontSize=13, fontName="Helvetica-Bold",
+                                   textColor=HY_HEADER_BG, spaceBefore=14, spaceAfter=4)
+    cutoff_note = _para_style("CutoffNote", fontSize=8, textColor=colors.grey, spaceAfter=6)
 
     today = datetime.now().strftime("%A, %d %B %Y")
+    cutoff_date = (datetime.now() - timedelta(days=CUTOFF_DAYS)).strftime("%d %b %Y")
+
     elements = [
-        Paragraph("Daily Finance Digest", title_style),
-        Paragraph(f"Equity & Credit Markets  —  {today}", subtitle_style),
-        Spacer(1, 0.3 * cm),
+        Paragraph("Daily Finance Digest", _para_style("Title", fontSize=18,
+                  textColor=HEADER_BG, fontName="Helvetica-Bold", spaceAfter=2)),
+        Paragraph(f"{today}  ·  Articles from last {CUTOFF_DAYS} days (since {cutoff_date})",
+                  _para_style("Sub", fontSize=10, textColor=colors.grey, spaceAfter=10)),
     ]
 
-    # Build table data
-    col_widths = [1.0 * cm, 3.0 * cm, 2.8 * cm, 11.0 * cm, 6.5 * cm]
-    headers = ["#", "Category", "Date", "Article Title", "Source & Link"]
-    header_row = [Paragraph(h, header_style) for h in headers]
-    data = [header_row]
+    # ── Section 1: General Markets ───────────────────────────────────────────
+    elements.append(Paragraph(f"Equity & Credit Markets  ({len(general)} articles)", section_title))
+    if general:
+        elements.append(_build_article_table(general, shared_styles, start_idx=1))
+    else:
+        elements.append(Paragraph("No articles found for this section.", cutoff_note))
 
-    for idx, art in enumerate(articles, start=1):
-        safe_title = xml_escape(art["title"])
-        safe_link = xml_escape(art["link"]) if art["link"] else ""
-        safe_source = xml_escape(art["source"])
-        title_para = Paragraph(safe_title, cell_style)
-        link_text = (
-            f'<link href="{safe_link}">{safe_link[:70]}{"…" if len(safe_link) > 70 else ""}</link>'
-            if safe_link else "—"
-        )
-        source_para = Paragraph(
-            f'<b>{safe_source}</b><br/>{link_text}', link_style
-        )
-        date_para = Paragraph(fmt_date(art.get("published", "")), cell_style)
-        data.append([
-            Paragraph(str(idx), cell_style),
-            Paragraph(art["category"], cell_style),
-            date_para,
-            title_para,
-            source_para,
-        ])
+    # ── Section 2: HY & Distressed ───────────────────────────────────────────
+    elements.append(Spacer(1, 0.4 * cm))
+    elements.append(Paragraph(
+        f"High Yield & Distressed  ({len(hy)} articles)  ·  Octus · 9fin · Bloomberg · Debtwire",
+        hy_section_title))
+    elements.append(Paragraph(
+        "Sources include specialist HY/distressed feeds. Paywalled sources may show limited articles.",
+        cutoff_note))
+    if hy:
+        elements.append(_build_article_table(hy, hy_styles, start_idx=1))
+    else:
+        elements.append(Paragraph(
+            "No HY/distressed articles found. Specialist sources (Octus, 9fin, Debtwire) "
+            "require subscriptions — their feeds may be restricted.",
+            cutoff_note))
 
-    table = Table(data, colWidths=col_widths, repeatRows=1)
-
-    # Row background colours
-    row_styles = [
-        ("BACKGROUND", (0, 0), (-1, 0), HEADER_BG),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#cccccc")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, ALT_ROW]),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 0), (-1, -1), 5),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-    ]
-
-    # Colour category column per type
-    for i, art in enumerate(articles, start=1):
-        bg = CATEGORY_COLORS.get(art["category"], colors.white)
-        row_styles.append(("BACKGROUND", (1, i), (1, i), bg))
-
-    table.setStyle(TableStyle(row_styles))
-    elements.append(table)
-
-    # Footer note
-    elements.append(Spacer(1, 0.5 * cm))
-    elements.append(
-        Paragraph(
-            f"Generated {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}  |  "
-            f"{len(articles)} articles from {len(FEEDS)} sources",
-            ParagraphStyle("Footer", parent=styles["Normal"],
-                           fontSize=7, textColor=colors.grey,
-                           alignment=TA_CENTER),
-        )
-    )
+    # Footer
+    elements.append(Spacer(1, 0.4 * cm))
+    elements.append(Paragraph(
+        f"Generated {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}  |  "
+        f"{len(general) + len(hy)} total articles  |  {CUTOFF_DAYS}-day cutoff",
+        _para_style("Footer", fontSize=7, textColor=colors.grey, alignment=TA_CENTER),
+    ))
 
     doc.build(elements)
     return buf.getvalue()
@@ -463,19 +507,20 @@ def main():
     print(f"{'='*60}\n")
 
     print("[1/3] Fetching articles ...")
-    articles = gather_articles()
-    print(f"  → {len(articles)} relevant articles collected\n")
+    general, hy = gather_articles()
+    print(f"  → {len(general)} general  |  {len(hy)} HY/distressed  "
+          f"(cutoff: last {CUTOFF_DAYS} days)\n")
 
-    if not articles:
+    if not general and not hy:
         print("No articles found. Check network / feed URLs.")
         return
 
     print("[2/3] Building PDF ...")
-    pdf_bytes = build_pdf(articles)
+    pdf_bytes = build_pdf(general, hy)
     print(f"  → PDF size: {len(pdf_bytes) / 1024:.1f} KB\n")
 
     print("[3/3] Sending email ...")
-    send_email(pdf_bytes, len(articles))
+    send_email(pdf_bytes, len(general) + len(hy))
 
     print("\nDone.\n")
 
