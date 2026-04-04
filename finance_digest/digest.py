@@ -43,19 +43,25 @@ SENDER_EMAIL = os.getenv("SENDER_EMAIL", "")        # your Gmail address
 SENDER_APP_PASSWORD = os.getenv("SENDER_APP_PASSWORD", "")  # Gmail App Password
 
 SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465  # SSL
+SMTP_PORT = 587  # STARTTLS — works on Replit and most cloud hosts
 
 MAX_ARTICLES_PER_SOURCE = 8  # cap per feed to keep digest manageable
 
 # ---------------------------------------------------------------------------
-# RSS Feed definitions
+# RSS Feed definitions  (updated April 2026)
 # Topics: equity markets, credit markets, macro
 # ---------------------------------------------------------------------------
 
 FEEDS = [
+    # Equity / macro
+    {
+        "source": "Reuters Business",
+        "url": "https://feeds.reuters.com/reuters/businessNews",
+        "category": "Equity / Macro",
+    },
     {
         "source": "Reuters Markets",
-        "url": "https://feeds.reuters.com/reuters/businessNews",
+        "url": "https://feeds.reuters.com/reuters/UKmarkets",
         "category": "Equity / Macro",
     },
     {
@@ -64,33 +70,49 @@ FEEDS = [
         "category": "Equity / Macro",
     },
     {
-        "source": "MarketWatch Top Stories",
-        "url": "http://feeds.marketwatch.com/marketwatch/topstories/",
-        "category": "Equity / Macro",
-    },
-    {
         "source": "CNBC Markets",
-        "url": "https://www.cnbc.com/id/20910258/device/rss/rss.html",
+        "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
         "category": "Equity",
     },
     {
-        "source": "Investopedia",
-        "url": "https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_articles",
-        "category": "Equity / Credit",
+        "source": "CNBC Finance",
+        "url": "https://www.cnbc.com/id/10000664/device/rss/rss.html",
+        "category": "Equity / Macro",
     },
     {
-        "source": "FT Markets",
-        "url": "https://www.ft.com/markets?format=rss",
-        "category": "Equity / Credit",
+        "source": "MarketWatch",
+        "url": "https://feeds.marketwatch.com/marketwatch/topstories/",
+        "category": "Equity / Macro",
     },
+    {
+        "source": "Nasdaq News",
+        "url": "https://www.nasdaq.com/feed/rssoutbound?category=Markets",
+        "category": "Equity",
+    },
+    # Credit / fixed income
     {
         "source": "WSJ Markets",
         "url": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml",
         "category": "Equity / Credit",
     },
     {
-        "source": "Seeking Alpha Markets",
-        "url": "https://seekingalpha.com/market_currents.xml",
+        "source": "WSJ Economy",
+        "url": "https://feeds.a.dj.com/rss/WSJcomUSBusiness.xml",
+        "category": "Credit / Macro",
+    },
+    {
+        "source": "FT Markets",
+        "url": "https://www.ft.com/rss/home/uk",
+        "category": "Equity / Credit",
+    },
+    {
+        "source": "Bloomberg Markets",
+        "url": "https://feeds.bloomberg.com/markets/news.rss",
+        "category": "Equity / Credit",
+    },
+    {
+        "source": "Investopedia",
+        "url": "https://www.investopedia.com/feedbuilder/feed/getfeed/?feedName=rss_articles",
         "category": "Equity / Credit",
     },
 ]
@@ -398,12 +420,26 @@ def send_email(pdf_bytes: bytes, article_count: int) -> None:
     part.add_header("Content-Disposition", f'attachment; filename="{filename}"')
     msg.attach(part)
 
-    context = ssl.create_default_context()
-    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context) as server:
-        server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
-        server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
-
-    print(f"  Email sent to {RECIPIENT_EMAIL}")
+    try:
+        context = ssl.create_default_context()
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.ehlo()
+            server.login(SENDER_EMAIL, SENDER_APP_PASSWORD)
+            server.sendmail(SENDER_EMAIL, RECIPIENT_EMAIL, msg.as_string())
+        print(f"  Email sent to {RECIPIENT_EMAIL}")
+    except smtplib.SMTPAuthenticationError:
+        print("  [ERROR] Authentication failed.")
+        print("  Make sure you are using a Gmail App Password (not your normal password).")
+        print("  Generate one at: https://myaccount.google.com/apppasswords")
+        raise
+    except smtplib.SMTPException as exc:
+        print(f"  [ERROR] SMTP error: {exc}")
+        raise
+    except Exception as exc:
+        print(f"  [ERROR] Unexpected error sending email: {exc}")
+        raise
 
 
 # ---------------------------------------------------------------------------
