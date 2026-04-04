@@ -261,6 +261,26 @@ HEADER_BG = colors.HexColor("#1a3a5c")
 ALT_ROW = colors.HexColor("#f9f9f9")
 
 
+_DATE_FORMATS = [
+    "%a, %d %b %Y %H:%M:%S %z",   # RSS: Mon, 04 Apr 2026 07:00:00 +0000
+    "%a, %d %b %Y %H:%M:%S GMT",   # RSS no-offset variant
+    "%Y-%m-%dT%H:%M:%S%z",         # Atom: 2026-04-04T07:00:00+00:00
+    "%Y-%m-%dT%H:%M:%SZ",          # Atom UTC
+    "%Y-%m-%d",
+]
+
+def fmt_date(raw: str) -> str:
+    """Parse a raw RSS/Atom date string and return e.g. '04 Apr 09:00'."""
+    raw = raw.strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.strptime(raw, fmt).strftime("%d %b %H:%M")
+        except ValueError:
+            continue
+    # fallback: return first 10 chars if we can't parse
+    return raw[:10] if raw else "—"
+
+
 def build_pdf(articles: list[dict]) -> bytes:
     """Render articles into a PDF and return bytes."""
     buf = io.BytesIO()
@@ -319,8 +339,8 @@ def build_pdf(articles: list[dict]) -> bytes:
     ]
 
     # Build table data
-    col_widths = [3.5 * cm, 3.2 * cm, 12.5 * cm, 7.5 * cm]
-    headers = ["#", "Category", "Article Title", "Source & Link"]
+    col_widths = [1.0 * cm, 3.0 * cm, 2.8 * cm, 11.0 * cm, 6.5 * cm]
+    headers = ["#", "Category", "Date", "Article Title", "Source & Link"]
     header_row = [Paragraph(h, header_style) for h in headers]
     data = [header_row]
 
@@ -336,9 +356,11 @@ def build_pdf(articles: list[dict]) -> bytes:
         source_para = Paragraph(
             f'<b>{safe_source}</b><br/>{link_text}', link_style
         )
+        date_para = Paragraph(fmt_date(art.get("published", "")), cell_style)
         data.append([
             Paragraph(str(idx), cell_style),
             Paragraph(art["category"], cell_style),
+            date_para,
             title_para,
             source_para,
         ])
