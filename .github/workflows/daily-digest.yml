@@ -21,6 +21,18 @@ jobs:
       - name: Install dependencies
         run: pip install requests reportlab python-dotenv
 
+      - name: Check secrets are set
+        env:
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+        run: |
+          if [ -z "$RESEND_API_KEY" ]; then
+            echo "ERROR: RESEND_API_KEY secret is not set."
+            echo "Go to: github.com/yelmosharaf/FYP > Settings > Secrets and variables > Actions"
+            echo "Add a secret named RESEND_API_KEY with your key from resend.com"
+            exit 1
+          fi
+          echo "RESEND_API_KEY is set (length: ${#RESEND_API_KEY})"
+
       - name: Run digest
         working-directory: finance_digest
         env:
