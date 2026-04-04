@@ -33,5 +33,5 @@ jobs:
         working-directory: finance_digest
         env:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
-          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL || 'elmusharf@gmail.com' }}
         run: python digest.py
