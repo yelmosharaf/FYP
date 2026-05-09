@@ -1,0 +1,39 @@
+name: Weekly Semiconductor Export Digest
+
+on:
+  schedule:
+    - cron: '0 7 * * 1'   # Every Monday at 07:00 UTC
+  workflow_dispatch:        # Allow manual trigger from GitHub Actions UI
+
+jobs:
+  send-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv
+
+      - name: Check RESEND_API_KEY is set
+        run: |
+          if [ -z "${{ secrets.RESEND_API_KEY }}" ]; then
+            echo "::error::RESEND_API_KEY secret is not set."
+            echo "Add it at: github.com/yelmosharaf/FYP/settings/secrets/actions/new"
+            exit 1
+          fi
+          echo "Secret is present."
+
+      - name: Run semiconductor export digest
+        working-directory: finance_digest
+        env:
+          RESEND_API_KEY:  ${{ secrets.RESEND_API_KEY }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL || 'elmusharf@gmail.com' }}
+          KOSIS_API_KEY:   ${{ secrets.KOSIS_API_KEY }}   # optional — get free key at kosis.kr/openapi
+        run: python semicon_export.py
