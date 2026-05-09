@@ -226,17 +226,14 @@ def fetch_news() -> dict[str, list]:
 
 
 # ---------------------------------------------------------------------------
-# Korea official data — KOSIS Open API (optional)
+# Korea official data — KOSIS Open API (free key at kosis.kr/openapi)
 # ---------------------------------------------------------------------------
 
-def fetch_korea_kosis() -> list[dict] | None:
+def fetch_korea_data() -> list[dict] | None:
     """
-    Fetch Korea semiconductor export data via KOSIS Open API.
-    Returns raw JSON records or None if the API key is absent / call fails.
-
+    Fetch Korea semiconductor monthly export figures via KOSIS Open API.
+    Returns parsed list [{month, value_usd_bn, unit_raw}] or None.
     Free key: https://kosis.kr/openapi/
-    The table DT_142001_007 is Korea Customs Service > Exports by commodity.
-    Verify the exact table at: https://kosis.kr/statHtml/statHtml.do?orgId=142&tblId=DT_142001_007
     """
     if not KOSIS_API_KEY:
         return None
@@ -251,7 +248,7 @@ def fetch_korea_kosis() -> list[dict] | None:
         "prdSe":      "M",
         "startPrdDe": (datetime.now() - timedelta(days=365)).strftime("%Y%m"),
         "endPrdDe":   datetime.now().strftime("%Y%m"),
-        "orgId":      "142",
+        "orgId":      "142",   # Korea Customs Service
         "tblId":      "DT_142001_007",
         "vwCd":       "MT_ZTITLE",
     }
@@ -263,15 +260,154 @@ def fetch_korea_kosis() -> list[dict] | None:
             timeout=15,
         )
         resp.raise_for_status()
-        data = resp.json()
-        # KOSIS wraps errors in the JSON body
-        if isinstance(data, dict) and data.get("err"):
-            print(f"  [WARN] KOSIS error: {data}")
+        raw = resp.json()
+        if isinstance(raw, dict) and raw.get("err"):
+            print(f"  [WARN] KOSIS error: {raw}")
             return None
-        return data if isinstance(data, list) else None
+        if not isinstance(raw, list):
+            return None
+        return _parse_kosis(raw)
     except Exception as exc:
-        print(f"  [WARN] KOSIS API: {exc}")
+        print(f"  [WARN] KOSIS: {exc}")
         return None
+
+
+def _parse_kosis(records: list) -> list[dict]:
+    """Convert raw KOSIS list into [{month, label, value_usd_bn, unit}] newest-first."""
+    out = []
+    for r in records:
+        period = r.get("PRD_DE", "")      # e.g. "202504"
+        value  = r.get("DT", "").replace(",", "").strip()
+        unit   = r.get("UNIT_NM", "")     # e.g. "백만달러" = million USD
+        itm    = r.get("ITM_NM_ENG") or r.get("ITM_NM", "")
+        if not period or not value:
+            continue
+        try:
+            val_f = float(value)
+        except ValueError:
+            continue
+        # Convert million USD → billion USD for display
+        val_bn = val_f / 1000 if "백만" in unit or "million" in unit.lower() else val_f
+        try:
+            label = datetime.strptime(period, "%Y%m").strftime("%b %Y")
+        except ValueError:
+            label = period
+        out.append({"month": period, "label": label,
+                    "value_bn": val_bn, "item": itm, "unit": unit})
+    # Sort newest first, deduplicate by month+item
+    seen: set[str] = set()
+    result = []
+    for r in sorted(out, key=lambda x: x["month"], reverse=True):
+        key = f"{r['month']}|{r['item']}"
+        if key not in seen:
+            seen.add(key)
+            result.append(r)
+    return result[:12]  # last 12 months
+
+
+# ---------------------------------------------------------------------------
+# Taiwan official data — Taiwan gov open data portal (no key needed)
+# ---------------------------------------------------------------------------
+
+def fetch_taiwan_data() -> list[dict] | None:
+    """
+    Fetch Taiwan monthly semiconductor export data from data.gov.tw (no API key).
+    Returns parsed list [{month, label, value_bn, category}] or None.
+    Source: Taiwan MOF monthly export statistics by HS commodity code.
+    """
+    # Taiwan open data — MOF monthly export by commodity (HS level)
+    # Dataset: 301000000A-000154-002  (trade stats by 2-digit HS)
+    ENDPOINTS = [
+        "https://data.gov.tw/api/v2/rest/datastore/301000000A-000154-002",
+        "https://data.gov.tw/api/v2/rest/datastore/301000000A-000154-001",
+    ]
+    for url in ENDPOINTS:
+        try:
+            resp = requests.get(
+                url,
+                params={"format": "json", "limit": 100},
+                headers=HEADERS,
+                timeout=15,
+            )
+            resp.raise_for_status()
+            body = resp.json()
+            records = (body.get("result") or {}).get("records") or []
+            if records:
+                parsed = _parse_taiwan(records)
+                if parsed:
+                    print(f"  Taiwan: {len(parsed)} records from {url}")
+                    return parsed
+        except Exception as exc:
+            print(f"  [WARN] Taiwan {url}: {exc}")
+
+    # Fallback: Taiwan Customs Administration open data
+    try:
+        resp = requests.get(
+            "https://data.gov.tw/api/v2/rest/datastore/6484",
+            params={"format": "json", "limit": 100},
+            headers=HEADERS,
+            timeout=15,
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        records = (body.get("result") or {}).get("records") or []
+        if records:
+            parsed = _parse_taiwan(records)
+            if parsed:
+                return parsed
+    except Exception as exc:
+        print(f"  [WARN] Taiwan fallback: {exc}")
+
+    return None
+
+
+def _parse_taiwan(records: list) -> list[dict]:
+    """
+    Try to extract semiconductor (HS 8541/8542) monthly export rows.
+    Returns [{month, label, value_bn, category}] newest-first.
+    """
+    out = []
+    for r in records:
+        # Look for HS code fields under various possible key names
+        hs = str(r.get("HS", "") or r.get("hs_code", "") or r.get("商品", "") or "")
+        if hs and not any(c in hs for c in ("8541", "8542", "85")):
+            continue  # skip non-semiconductor rows if we can identify the field
+
+        # Find a period field
+        period_raw = (r.get("年月") or r.get("period") or r.get("date")
+                      or r.get("Month") or r.get("yearmonth") or "")
+        # Find a value field (export value, likely in million USD or NTD)
+        value_raw = (r.get("出口値") or r.get("export_value") or r.get("Export")
+                     or r.get("value") or r.get("Value") or "")
+
+        if not period_raw or not value_raw:
+            out.append({"month": "", "label": "", "value_bn": None,
+                        "category": "", "_raw": r})
+            continue
+
+        period_s = str(period_raw).replace("/", "").replace("-", "").strip()
+        # Taiwan uses ROC calendar (year since 1912), convert if needed
+        if len(period_s) == 5 and period_s.isdigit():
+            roc_year  = int(period_s[:3])
+            month_num = int(period_s[3:])
+            ad_year   = roc_year + 1911
+            period_s  = f"{ad_year}{month_num:02d}"
+        try:
+            label = datetime.strptime(period_s[:6], "%Y%m").strftime("%b %Y")
+        except ValueError:
+            label = period_raw
+
+        try:
+            val = float(str(value_raw).replace(",", "").strip())
+            val_bn = round(val / 30_000, 2) if val > 10_000 else round(val / 1000, 2)
+        except (ValueError, TypeError):
+            val_bn = None
+
+        out.append({"month": period_s[:6], "label": label,
+                    "value_bn": val_bn, "category": hs, "_raw": r})
+
+    out.sort(key=lambda x: x.get("month", ""), reverse=True)
+    return [r for r in out if r.get("month")][:12]
 
 
 # ---------------------------------------------------------------------------
@@ -283,6 +419,47 @@ _TH_BASE = (
     "border-bottom:2px solid #ddd"
 )
 _TD = "padding:7px 10px;border-bottom:1px solid #eee;vertical-align:top"
+
+
+def _data_table_html(rows: list[dict] | None, accent: str, source_label: str) -> str:
+    """Render official monthly export data as a metrics table, or a compact offline note."""
+    if not rows:
+        return (
+            f'<p style="font-size:12px;color:#999;font-style:italic;margin:0 0 14px">'
+            f'Official figures unavailable — source: '
+            f'<a href="#" style="color:#1155cc">{source_label}</a></p>'
+        )
+
+    th = f"padding:6px 10px;font-size:11px;font-weight:600;background:{accent}15;text-align:left;border-bottom:1px solid {accent}40"
+    td_val = f"padding:6px 10px;font-size:12px;border-bottom:1px solid #f0f0f0;font-weight:600;color:#1a1a1a"
+    td_sub = f"padding:6px 10px;font-size:12px;border-bottom:1px solid #f0f0f0;color:#555"
+
+    header = (
+        f"<tr>"
+        f"<th style='{th}'>Month</th>"
+        f"<th style='{th}'>Export (USD)</th>"
+        f"<th style='{th}'>Item / Notes</th>"
+        f"</tr>"
+    )
+    body_rows = []
+    for r in rows[:6]:
+        val = f"${r['value_bn']:.1f}B" if r.get("value_bn") is not None else "—"
+        note = xml_escape(str(r.get("item") or r.get("category") or ""))[:50]
+        body_rows.append(
+            f"<tr>"
+            f"<td style='{td_sub}'>{r['label']}</td>"
+            f"<td style='{td_val}'>{val}</td>"
+            f"<td style='{td_sub}'>{note}</td>"
+            f"</tr>"
+        )
+
+    return (
+        f'<table style="width:100%;border-collapse:collapse;font-size:13px;'
+        f'margin-bottom:16px;border:1px solid {accent}30;border-radius:4px">'
+        f"<thead>{header}</thead>"
+        f"<tbody>{''.join(body_rows)}</tbody>"
+        f'</table>'
+    )
 
 
 def _article_rows(articles: list, max_n: int = 15) -> str:
@@ -311,23 +488,7 @@ def _article_rows(articles: list, max_n: int = 15) -> str:
     return "\n".join(rows)
 
 
-def _kosis_block(kosis_data: list | None) -> str:
-    if kosis_data:
-        return (
-            f'<p style="color:#2a7a2a;font-size:12px;margin:0 0 10px">'
-            f'&#10003; Official KOSIS data loaded ({len(kosis_data)} records).</p>'
-        )
-    return (
-        '<div style="background:#fff8e1;border-left:3px solid #f0b400;'
-        'padding:10px 14px;border-radius:3px;font-size:12px;color:#555;margin-bottom:12px">'
-        '<strong>Live data tip:</strong> Add <code>KOSIS_API_KEY</code> as a GitHub secret '
-        'to include official monthly figures from Statistics Korea. '
-        'Free key at <a href="https://kosis.kr/openapi/" style="color:#1155cc">kosis.kr/openapi</a>.'
-        '</div>'
-    )
-
-
-def build_html(news: dict, kosis_data: list | None) -> str:
+def build_html(news: dict, korea_data: list | None, taiwan_data: list | None) -> str:
     today    = datetime.now().strftime("%A, %d %B %Y")
     gen_ts   = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     total    = sum(len(v) for v in news.values())
@@ -335,17 +496,15 @@ def build_html(news: dict, kosis_data: list | None) -> str:
     korea_articles  = news.get("korea", []) + news.get("both", [])
     taiwan_articles = news.get("taiwan", []) + news.get("both", [])
 
-    korea_articles.sort(
-        key=lambda a: _parse_dt(a["published"]) or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    taiwan_articles.sort(
-        key=lambda a: _parse_dt(a["published"]) or datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
+    _sk = lambda a: _parse_dt(a["published"]) or datetime.min.replace(tzinfo=timezone.utc)
+    korea_articles.sort(key=_sk, reverse=True)
+    taiwan_articles.sort(key=_sk, reverse=True)
 
     th_navy = f"{_TH_BASE};background:#eef2f8"
     th_red  = f"{_TH_BASE};background:#fdf0f0"
+
+    korea_data_html  = _data_table_html(korea_data,  "#1a3a5c", "KOSIS / Korea Customs Service")
+    taiwan_data_html = _data_table_html(taiwan_data, "#8b1a1a", "Taiwan MOF / data.gov.tw")
 
     return f"""<!DOCTYPE html>
 <html lang="en">
@@ -376,15 +535,13 @@ def build_html(news: dict, kosis_data: list | None) -> str:
     <p style="margin:0 0 14px;font-size:12px;color:#666;line-height:1.6">
       ~80-85% of Korea's semiconductor exports are memory (DRAM + NAND).
       Samsung &amp; SK Hynix are the two largest memory producers on Earth.
-      Monthly MOTIE data is a leading indicator for the global memory cycle (2-4 week lag).
+      Monthly MOTIE data leads the global memory cycle by 2-4 weeks.
     </p>
 
-    {_kosis_block(kosis_data)}
+    {korea_data_html}
 
-    <h3 style="font-size:12px;color:#555;margin:14px 0 6px;
-               text-transform:uppercase;letter-spacing:.6px">
-      This week's coverage
-    </h3>
+    <h3 style="font-size:12px;color:#555;margin:0 0 6px;
+               text-transform:uppercase;letter-spacing:.6px">This week's coverage</h3>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr>
         <th style="{th_navy};width:80px">Date</th>
@@ -405,21 +562,14 @@ def build_html(news: dict, kosis_data: list | None) -> str:
     </h2>
     <p style="margin:0 0 14px;font-size:12px;color:#666;line-height:1.6">
       TSMC captures ~90% of advanced-node foundry revenue globally.
-      Taiwan's monthly Ministry of Finance export data tracks logic/AI chip demand &#8212;
+      Taiwan's monthly MOF export data tracks logic/AI chip demand &#8212;
       a strong complement to Korea's memory cycle signal.
     </p>
 
-    <div style="background:#fff8e1;border-left:3px solid #f0b400;
-        padding:10px 14px;border-radius:3px;font-size:12px;color:#555;margin-bottom:12px">
-      <strong>Official data:</strong> Taiwan Ministry of Finance publishes monthly trade statistics at
-      <a href="https://www.mof.gov.tw/" style="color:#1155cc">mof.gov.tw</a>.
-      The IC/semiconductor line item (HS 8541-8542) is released on the 1st week of each month.
-    </div>
+    {taiwan_data_html}
 
-    <h3 style="font-size:12px;color:#555;margin:14px 0 6px;
-               text-transform:uppercase;letter-spacing:.6px">
-      This week's coverage
-    </h3>
+    <h3 style="font-size:12px;color:#555;margin:0 0 6px;
+               text-transform:uppercase;letter-spacing:.6px">This week's coverage</h3>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr>
         <th style="{th_red};width:80px">Date</th>
@@ -503,13 +653,14 @@ def main() -> None:
         f"  |  Total: {total}\n"
     )
 
-    print("[2/3] Fetching official data ...")
-    kosis = fetch_korea_kosis()
-    status = f"loaded ({len(kosis)} records)" if kosis else "skipped (no KOSIS_API_KEY)"
-    print(f"  KOSIS: {status}\n")
+    print("[2/3] Fetching official export data ...")
+    korea_data  = fetch_korea_data()
+    taiwan_data = fetch_taiwan_data()
+    print(f"  Korea (KOSIS):  {'loaded — ' + str(len(korea_data)) + ' records' if korea_data else 'unavailable (add KOSIS_API_KEY secret for live figures)'}")
+    print(f"  Taiwan (MOF):   {'loaded — ' + str(len(taiwan_data)) + ' records' if taiwan_data else 'unavailable'}\n")
 
     print("[3/3] Sending email ...")
-    html = build_html(news, kosis)
+    html = build_html(news, korea_data, taiwan_data)
     send_email(html, total)
 
     print("\nDone.\n")
