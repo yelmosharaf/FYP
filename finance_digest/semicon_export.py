@@ -72,35 +72,40 @@ FEEDS = [
 # Keyword classifiers
 # ---------------------------------------------------------------------------
 
-_KOREA_KW = {
-    "korea", "korean", "samsung", "sk hynix", "hynix",
-    "motie", "kita", "kotra",
-}
-_TAIWAN_KW = {
-    "taiwan", "taiwanese", "tsmc", "mediatek", "umc",
-    "ase group", "taiwan semiconductor",
-}
+# Company names alone imply both country AND semiconductor — no extra keyword needed
+_KOREA_COMPANIES  = {"samsung", "sk hynix", "hynix", "sk telecom"}
+_TAIWAN_COMPANIES = {"tsmc", "mediatek", "umc", "ase group", "taiwan semiconductor"}
+
+# Geographic keywords still need a semiconductor word alongside them
+_KOREA_GEO  = {"korea", "korean", "motie", "kita", "kotra"}
+_TAIWAN_GEO = {"taiwan", "taiwanese"}
+
 _SEMICON_KW = {
-    "semiconductor", "chip", "memory", "dram", "nand", "hbm",
+    "semiconductor", "chip", "chips", "memory", "dram", "nand", "hbm",
     "wafer", "integrated circuit", "export", "shipment",
-    "foundry", "fab ", "ai chip", "logic chip",
+    "foundry", "fab", "ai chip", "logic chip", "packaging",
+    "earnings", "revenue", "production", "output", "capacity",
 }
 
 
 def _classify(title: str) -> str:
     """Return 'korea', 'taiwan', 'both', or '' based on title keywords."""
     t = title.lower()
-    if not any(kw in t for kw in _SEMICON_KW):
+    korea_co  = any(kw in t for kw in _KOREA_COMPANIES)
+    taiwan_co = any(kw in t for kw in _TAIWAN_COMPANIES)
+    has_semicon = any(kw in t for kw in _SEMICON_KW)
+    korea_geo   = any(kw in t for kw in _KOREA_GEO)
+    taiwan_geo  = any(kw in t for kw in _TAIWAN_GEO)
+
+    # Company name alone is enough; geo keywords require a semicon word too
+    korea  = korea_co  or (has_semicon and korea_geo)
+    taiwan = taiwan_co or (has_semicon and taiwan_geo)
+
+    if not (korea or taiwan):
         return ""
-    korea  = any(kw in t for kw in _KOREA_KW)
-    taiwan = any(kw in t for kw in _TAIWAN_KW)
     if korea and taiwan:
         return "both"
-    if korea:
-        return "korea"
-    if taiwan:
-        return "taiwan"
-    return ""
+    return "korea" if korea else "taiwan"
 
 
 # ---------------------------------------------------------------------------
@@ -359,8 +364,7 @@ def build_html(news: dict, kosis_data: list | None) -> str:
       Weekly Semiconductor Export Digest
     </h1>
     <p style="margin:5px 0 0;font-size:13px;opacity:.75">
-      {today} &nbsp;&middot;&nbsp; Korea &amp; Taiwan
-      &nbsp;&middot;&nbsp; {total} headlines compiled
+      {today} &#183; Korea &amp; Taiwan &#183; {total} headlines compiled
     </p>
   </div>
 
@@ -370,16 +374,16 @@ def build_html(news: dict, kosis_data: list | None) -> str:
       &#127472;&#127479; Korea Semiconductor Exports
     </h2>
     <p style="margin:0 0 14px;font-size:12px;color:#666;line-height:1.6">
-      ~80&ndash;85&percnt; of Korea&rsquo;s semiconductor exports are memory (DRAM + NAND).
+      ~80-85% of Korea's semiconductor exports are memory (DRAM + NAND).
       Samsung &amp; SK Hynix are the two largest memory producers on Earth.
-      Monthly MOTIE data is a leading indicator for the global memory cycle (2&ndash;4 week lag).
+      Monthly MOTIE data is a leading indicator for the global memory cycle (2-4 week lag).
     </p>
 
     {_kosis_block(kosis_data)}
 
     <h3 style="font-size:12px;color:#555;margin:14px 0 6px;
                text-transform:uppercase;letter-spacing:.6px">
-      This week&rsquo;s coverage
+      This week's coverage
     </h3>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr>
@@ -400,21 +404,21 @@ def build_html(news: dict, kosis_data: list | None) -> str:
       &#127481;&#127484; Taiwan Semiconductor Exports
     </h2>
     <p style="margin:0 0 14px;font-size:12px;color:#666;line-height:1.6">
-      TSMC captures ~90&percnt; of advanced-node foundry revenue globally.
-      Taiwan&rsquo;s monthly Ministry of Finance export data tracks logic/AI chip demand &mdash;
-      a strong complement to Korea&rsquo;s memory cycle signal.
+      TSMC captures ~90% of advanced-node foundry revenue globally.
+      Taiwan's monthly Ministry of Finance export data tracks logic/AI chip demand &#8212;
+      a strong complement to Korea's memory cycle signal.
     </p>
 
     <div style="background:#fff8e1;border-left:3px solid #f0b400;
         padding:10px 14px;border-radius:3px;font-size:12px;color:#555;margin-bottom:12px">
       <strong>Official data:</strong> Taiwan Ministry of Finance publishes monthly trade statistics at
       <a href="https://www.mof.gov.tw/" style="color:#1155cc">mof.gov.tw</a>.
-      The IC/semiconductor line item (HS 8541&ndash;8542) is released on the 1st week of each month.
+      The IC/semiconductor line item (HS 8541-8542) is released on the 1st week of each month.
     </div>
 
     <h3 style="font-size:12px;color:#555;margin:14px 0 6px;
                text-transform:uppercase;letter-spacing:.6px">
-      This week&rsquo;s coverage
+      This week's coverage
     </h3>
     <table style="width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr>
@@ -429,8 +433,7 @@ def build_html(news: dict, kosis_data: list | None) -> str:
   <!-- Footer -->
   <div style="background:white;padding:12px 24px;border:1px solid #dce3ec;border-top:none;
               border-radius:0 0 8px 8px;text-align:center;font-size:11px;color:#aaa">
-    Generated {gen_ts} &nbsp;&middot;&nbsp; Weekly Semiconductor Export Digest
-    &nbsp;&middot;&nbsp; github.com/yelmosharaf/FYP
+    Generated {gen_ts} &#183; Weekly Semiconductor Export Digest &#183; github.com/yelmosharaf/FYP
   </div>
 
 </div>
