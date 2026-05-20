@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Networking Digest</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #f0f2f5; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: #1a1a2e; }
+  .wrapper { max-width: 680px; margin: 0 auto; padding: 24px 16px; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #0d1b3e 0%, #1a3a6b 100%); border-radius: 12px; padding: 32px; margin-bottom: 24px; color: white; }
+  .header h1 { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  .header .subtitle { font-size: 13px; color: #8ba8d4; margin-bottom: 16px; }
+  .header .stats { display: flex; gap: 24px; }
+  .stat { text-align: center; }
+  .stat .val { font-size: 28px; font-weight: 800; color: white; line-height: 1; }
+  .stat .lbl { font-size: 11px; color: #8ba8d4; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+  /* Sections */
+  .section { margin-bottom: 24px; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; color: #6b7280; margin-bottom: 12px; padding-left: 4px; }
+
+  /* Contact cards */
+  .card { background: white; border-radius: 10px; padding: 16px 20px; margin-bottom: 10px; border-left: 4px solid #e5e7eb; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .card.urgent { border-left-color: #ef4444; }
+  .card.overdue { border-left-color: #f97316; }
+  .card.never-met { border-left-color: #8b5cf6; }
+  .card.ok { border-left-color: #22c55e; }
+
+  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .card-name { font-size: 15px; font-weight: 700; color: #111827; }
+  .card-fund { font-size: 12px; color: #6b7280; margin-top: 1px; }
+  .badge { font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 20px; white-space: nowrap; }
+  .badge.red { background: #fee2e2; color: #b91c1c; }
+  .badge.orange { background: #ffedd5; color: #c2410c; }
+  .badge.purple { background: #ede9fe; color: #7c3aed; }
+  .badge.green { background: #dcfce7; color: #15803d; }
+  .badge.gray { background: #f3f4f6; color: #4b5563; }
+
+  .card-meta { display: flex; gap: 16px; font-size: 12px; color: #6b7280; margin-bottom: 8px; flex-wrap: wrap; }
+  .card-meta span { display: flex; align-items: center; gap: 4px; }
+
+  .card-bg { font-size: 12px; color: #374151; line-height: 1.5; background: #f9fafb; border-radius: 6px; padding: 8px 12px; margin-top: 8px; }
+
+  .card-link { display: inline-block; margin-top: 10px; font-size: 11px; font-weight: 600; color: #1d4ed8; text-decoration: none; padding: 4px 10px; background: #eff6ff; border-radius: 6px; }
+  .card-link:hover { background: #dbeafe; }
+
+  /* Fund table */
+  .fund-table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .fund-table th { background: #f8fafc; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; padding: 10px 16px; text-align: left; border-bottom: 1px solid #e5e7eb; }
+  .fund-table td { padding: 12px 16px; font-size: 13px; color: #374151; border-bottom: 1px solid #f3f4f6; vertical-align: middle; }
+  .fund-table tr:last-child td { border-bottom: none; }
+  .fund-table tr:hover td { background: #f9fafb; }
+
+  .dot-row { display: flex; gap: 3px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; }
+  .dot.filled { background: #3b82f6; }
+  .dot.empty { background: #e5e7eb; }
+
+  /* Meeting log */
+  .meeting-row { background: white; border-radius: 8px; padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: flex-start; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+  .meeting-name { font-size: 13px; font-weight: 600; color: #111827; }
+  .meeting-detail { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .meeting-date { font-size: 12px; color: #9ca3af; white-space: nowrap; }
+
+  /* Footer */
+  .footer { text-align: center; padding: 24px 0 8px; font-size: 11px; color: #9ca3af; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- ── Header ── -->
+  <div class="header">
+    <div class="subtitle">London Credit &amp; Private Credit Coverage</div>
+    <h1>Networking Digest &mdash; {{ week_label }}</h1>
+    <div class="stats">
+      <div class="stat">
+        <div class="val">{{ total_contacts }}</div>
+        <div class="lbl">Contacts</div>
+      </div>
+      <div class="stat">
+        <div class="val" style="color: {% if action_count > 0 %}#fca5a5{% else %}#86efac{% endif %}">{{ action_count }}</div>
+        <div class="lbl">Need Action</div>
+      </div>
+      <div class="stat">
+        <div class="val">{{ fund_rows | length }}</div>
+        <div class="lbl">Funds</div>
+      </div>
+      <div class="stat">
+        <div class="val">{{ on_track | length }}</div>
+        <div class="lbl">On Track</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Never Met ── -->
+  {% if never_met %}
+  <div class="section">
+    <div class="section-title">First Meeting Needed</div>
+    {% for c in never_met %}
+    <div class="card never-met">
+      <div class="card-top">
+        <div>
+          <div class="card-name">{{ c.Name }}</div>
+          <div class="card-fund">{{ c.Fund }}{% if c.Role %} &middot; {{ c.Role }}{% endif %}</div>
+        </div>
+        <span class="badge purple">Never Met</span>
+      </div>
+      <div class="card-meta">
+        <span>Priority {{ c.Priority }}</span>
+        <span>Target: every {{ c._cadence }} days</span>
+        {% if c.Tags %}<span>{{ c.Tags }}</span>{% endif %}
+      </div>
+      {% if c.Background %}
+      <div class="card-bg">{{ c.Background }}</div>
+      {% endif %}
+      {% if c.LinkedIn %}
+      <a class="card-link" href="{{ c.LinkedIn }}">LinkedIn Profile</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── Overdue ── -->
+  {% if overdue %}
+  <div class="section">
+    <div class="section-title">Overdue &mdash; Schedule Now</div>
+    {% for c in overdue %}
+    <div class="card {% if c._is_urgent %}urgent{% else %}overdue{% endif %}">
+      <div class="card-top">
+        <div>
+          <div class="card-name">{{ c.Name }}</div>
+          <div class="card-fund">{{ c.Fund }}{% if c.Role %} &middot; {{ c.Role }}{% endif %}</div>
+        </div>
+        <span class="badge {% if c._is_urgent %}red{% else %}orange{% endif %}">
+          {{ c._days_overdue }}d overdue
+        </span>
+      </div>
+      <div class="card-meta">
+        <span>Last met {{ c._days_since }} days ago</span>
+        <span>Target: every {{ c._cadence }} days</span>
+        <span>Priority {{ c.Priority }}</span>
+      </div>
+      {% if c.Background %}
+      <div class="card-bg">{{ c.Background }}</div>
+      {% endif %}
+      {% if c.LinkedIn %}
+      <a class="card-link" href="{{ c.LinkedIn }}">LinkedIn Profile</a>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── On Track ── -->
+  {% if on_track %}
+  <div class="section">
+    <div class="section-title">On Track</div>
+    {% for c in on_track %}
+    <div class="card ok">
+      <div class="card-top">
+        <div>
+          <div class="card-name">{{ c.Name }}</div>
+          <div class="card-fund">{{ c.Fund }}{% if c.Role %} &middot; {{ c.Role }}{% endif %}</div>
+        </div>
+        <span class="badge green">{{ c._cadence - c._days_since }}d left</span>
+      </div>
+      <div class="card-meta">
+        <span>Last met {{ c._days_since }} days ago</span>
+        <span>Target: every {{ c._cadence }} days</span>
+      </div>
+      {% if c.Background %}
+      <div class="card-bg">{{ c.Background }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <!-- ── Fund Coverage Map ── -->
+  {% if fund_rows %}
+  <div class="section">
+    <div class="section-title">Fund Coverage Map</div>
+    <table class="fund-table">
+      <thead>
+        <tr>
+          <th>Fund</th>
+          <th>Strategy</th>
+          <th>Contacts</th>
+          <th>Last Touch</th>
+          <th>Coverage</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in fund_rows %}
+        <tr>
+          <td><strong>{{ row.fund.get("Fund Name", "") }}</strong></td>
+          <td>{{ row.fund.get("Strategy", "") or "—" }}</td>
+          <td>{{ row.contacts | length }}</td>
+          <td>
+            {% if row.last_touch_days is not none %}
+              {% if row.last_touch_days <= 14 %}
+                <span class="badge green">{{ row.last_touch_days }}d ago</span>
+              {% elif row.last_touch_days <= 45 %}
+                <span class="badge orange">{{ row.last_touch_days }}d ago</span>
+              {% else %}
+                <span class="badge red">{{ row.last_touch_days }}d ago</span>
+              {% endif %}
+            {% else %}
+              <span class="badge gray">No meetings</span>
+            {% endif %}
+          </td>
+          <td>
+            <div class="dot-row">
+              {% set n = [row.contacts | length, 5] | min %}
+              {% for i in range(5) %}
+                <div class="dot {% if i < n %}filled{% else %}empty{% endif %}"></div>
+              {% endfor %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <!-- ── Recent Meetings ── -->
+  {% if recent_meetings %}
+  <div class="section">
+    <div class="section-title">Recent Meetings (Last 14 Days)</div>
+    {% for m in recent_meetings %}
+    <div class="meeting-row">
+      <div>
+        <div class="meeting-name">{{ m.get("Contact Name", "") }}</div>
+        <div class="meeting-detail">
+          {{ m.get("Fund", "") }}{% if m.get("Type") %} &middot; {{ m.get("Type") }}{% endif %}
+          {% if m.get("Notes") %} &mdash; {{ m.get("Notes") }}{% endif %}
+        </div>
+        {% if m.get("Action Items") %}
+        <div class="meeting-detail" style="color:#ef4444; margin-top:3px;">
+          Action: {{ m.get("Action Items") }}
+        </div>
+        {% endif %}
+      </div>
+      <div class="meeting-date">{{ m.get("Date", "") }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    Networking Digest &middot; {{ week_label }} &middot; elmusharf@gmail.com<br>
+    Update your contacts at <a href="https://docs.google.com/spreadsheets" style="color:#6b7280">Google Sheets</a>
+  </div>
+
+</div>
+</body>
+</html>

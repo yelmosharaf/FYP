@@ -1,2 +1,6 @@
 finance_digest/__pycache__/
 finance_digest/.env
+networking/__pycache__/
+networking/.env
+networking/digest_preview.html
+*.pyc
