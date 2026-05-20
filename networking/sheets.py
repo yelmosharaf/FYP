@@ -34,7 +34,7 @@ def _client() -> gspread.Client:
     creds_json = os.environ["GOOGLE_CREDENTIALS_JSON"]
     creds_dict = json.loads(creds_json)
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
+    return gspread.Client(auth=creds)
 
 
 def _book() -> gspread.Spreadsheet:

@@ -72,7 +72,7 @@ SEED_CONTACTS = [
 def _client() -> gspread.Client:
     creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    return gspread.authorize(creds)
+    return gspread.Client(auth=creds)
 
 
 def _fmt(ws: gspread.Worksheet) -> None:
@@ -85,46 +85,47 @@ OWNER_EMAIL = "elmusharf@gmail.com"
 
 
 def main() -> None:
+    print("Step 1/6: Authenticating with Google…")
     client = _client()
+    print("         OK")
 
+    print("Step 2/6: Creating spreadsheet…")
     title = "Networking Dashboard — London Credit"
     spreadsheet = client.create(title)
+    print(f"         OK — id={spreadsheet.id}")
 
-    # Share with the owner so it appears in their Google Drive
+    print(f"Step 3/6: Sharing with {OWNER_EMAIL}…")
     spreadsheet.share(OWNER_EMAIL, perm_type="user", role="writer", notify=False)
+    print("         OK")
 
-    # Rename default Sheet1 → Funds
+    print("Step 4/6: Creating tabs…")
     ws_default = spreadsheet.sheet1
     ws_default.update_title(TAB_FUNDS)
     ws_funds = ws_default
-
-    # Contacts sheet
     ws_contacts = spreadsheet.add_worksheet(title=TAB_CONTACTS, rows=200, cols=20)
-
-    # Meetings sheet
     ws_meetings = spreadsheet.add_worksheet(title=TAB_MEETINGS, rows=500, cols=10)
+    print("         OK — Funds, Contacts, Meetings")
 
-    # Write headers
+    print("Step 5/6: Writing headers…")
     ws_funds.append_row(FUND_HEADERS, value_input_option="USER_ENTERED")
     ws_contacts.append_row(CONTACT_HEADERS, value_input_option="USER_ENTERED")
     ws_meetings.append_row(MEETING_HEADERS, value_input_option="USER_ENTERED")
-
-    # Format headers
     for ws in [ws_funds, ws_contacts, ws_meetings]:
         _fmt(ws)
+    print("         OK")
 
-    # Seed data
+    print("Step 6/6: Seeding contact data…")
     for row in SEED_FUNDS:
         ws_funds.append_row(row, value_input_option="USER_ENTERED")
     for row in SEED_CONTACTS:
         ws_contacts.append_row(row, value_input_option="USER_ENTERED")
+    print("         OK — 1 fund, 2 contacts")
 
+    print()
     print(f"::notice::SHEET_ID={spreadsheet.id}")
     print(f"Sheet URL: {spreadsheet.url}")
-    print(f"Shared with: {OWNER_EMAIL}")
-    print(f"Seeded: 1 fund, 2 contacts (Hady Eid, Guerino Panetta)")
     print()
-    print("NEXT STEP: copy the SHEET_ID above and add it as a GitHub Secret named SHEET_ID")
+    print("NEXT STEP: add SHEET_ID as a GitHub Secret, then run 'Weekly Networking Digest'")
 
 
 if __name__ == "__main__":
