@@ -12,7 +12,6 @@ import json
 import os
 import re
 import smtplib
-import textwrap
 from datetime import date
 from email.header import decode_header as _decode_header
 from email.mime.multipart import MIMEMultipart

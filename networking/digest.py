@@ -6,7 +6,7 @@ renders an HTML email, and delivers via Gmail SMTP.
 import os
 import smtplib
 import sys
-from datetime import date, timedelta
+from datetime import date
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path

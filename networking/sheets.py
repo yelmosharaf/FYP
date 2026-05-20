@@ -77,7 +77,6 @@ def log_meeting(contact_name: str, fund: str, meeting_date: str,
     records = ws_contacts.get_all_records()
     headers = ws_contacts.row_values(1)
     last_met_col = headers.index("Last Met") + 1
-    name_col = headers.index("Name") + 1
 
     for i, row in enumerate(records, start=2):
         if row.get("Name", "").strip().lower() == contact_name.strip().lower():
