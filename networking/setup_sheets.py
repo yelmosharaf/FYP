@@ -81,29 +81,28 @@ def _fmt(ws: gspread.Worksheet) -> None:
     ws.freeze(rows=1)
 
 
+OWNER_EMAIL = "elmusharf@gmail.com"
+
+
 def main() -> None:
     client = _client()
 
     title = "Networking Dashboard — London Credit"
-    sh = client.create(title)
-    print(f"Created sheet: {sh.url}")
-    print(f"SHEET_ID = {sh.id}")
-    print()
-    print("ACTION REQUIRED:")
-    print(f"  1. Share this sheet with your service account email (Editor access)")
-    print(f"  2. Add SHEET_ID={sh.id} to your .env and GitHub Secrets")
-    print()
+    spreadsheet = client.create(title)
+
+    # Share with the owner so it appears in their Google Drive
+    spreadsheet.share(OWNER_EMAIL, perm_type="user", role="writer", notify=False)
 
     # Rename default Sheet1 → Funds
-    ws_default = sh.sheet1
+    ws_default = spreadsheet.sheet1
     ws_default.update_title(TAB_FUNDS)
     ws_funds = ws_default
 
     # Contacts sheet
-    ws_contacts = sh.add_worksheet(title=TAB_CONTACTS, rows=200, cols=20)
+    ws_contacts = spreadsheet.add_worksheet(title=TAB_CONTACTS, rows=200, cols=20)
 
     # Meetings sheet
-    ws_meetings = sh.add_worksheet(title=TAB_MEETINGS, rows=500, cols=10)
+    ws_meetings = spreadsheet.add_worksheet(title=TAB_MEETINGS, rows=500, cols=10)
 
     # Write headers
     ws_funds.append_row(FUND_HEADERS, value_input_option="USER_ENTERED")
@@ -117,12 +116,15 @@ def main() -> None:
     # Seed data
     for row in SEED_FUNDS:
         ws_funds.append_row(row, value_input_option="USER_ENTERED")
-
     for row in SEED_CONTACTS:
         ws_contacts.append_row(row, value_input_option="USER_ENTERED")
 
-    print("Sheet created and seeded with 1 fund, 2 contacts.")
-    print(f"Open: {sh.url}")
+    print(f"::notice::SHEET_ID={spreadsheet.id}")
+    print(f"Sheet URL: {spreadsheet.url}")
+    print(f"Shared with: {OWNER_EMAIL}")
+    print(f"Seeded: 1 fund, 2 contacts (Hady Eid, Guerino Panetta)")
+    print()
+    print("NEXT STEP: copy the SHEET_ID above and add it as a GitHub Secret named SHEET_ID")
 
 
 if __name__ == "__main__":
