@@ -1,8 +1,6 @@
 """
-Import LinkedIn connections from a Google Sheet (exported from LinkedIn archive)
-into the Networking Dashboard Contacts sheet.
-
-Works with both native Google Sheets AND Excel (.xlsx) files stored in Drive.
+Import LinkedIn connections from a Google Sheet into the Networking Dashboard.
+Handles LinkedIn exports that have metadata rows before the actual headers.
 """
 
 import json
@@ -31,8 +29,7 @@ def _build_linkedin_url(first: str, last: str) -> str:
     return f"https://www.linkedin.com/in/{name}/"
 
 
-def _fetch_as_csv() -> list[list[str]]:
-    """Read rows from a native Google Sheet using gspread."""
+def _fetch_rows() -> list[list[str]]:
     client = _client()
     try:
         src = client.open_by_key(LINKEDIN_FILE_ID)
@@ -42,39 +39,56 @@ def _fetch_as_csv() -> list[list[str]]:
         print(f"  {creds_dict['client_email']}")
         raise
     rows = src.sheet1.get_all_values()
-    print(f"  Read {len(rows)} rows via gspread")
+    print(f"  Read {len(rows)} rows")
     return rows
+
+
+def _find_header_row(all_rows: list[list[str]]) -> int:
+    """LinkedIn exports have metadata lines before the real header row.
+    Scan until we find a row containing 'First Name'."""
+    for i, row in enumerate(all_rows):
+        row_lower = [c.strip().lower() for c in row]
+        if COL_FIRST in row_lower or "firstname" in row_lower:
+            return i
+    return -1
 
 
 def main() -> None:
     print(f"Fetching LinkedIn export (file {LINKEDIN_FILE_ID})…")
-    all_rows = _fetch_as_csv()
+    all_rows = _fetch_rows()
 
     if not all_rows:
         print("ERROR: file is empty.")
         return
 
-    headers = all_rows[0]
-    hmap = _header_map(headers)
-    data_rows = all_rows[1:]
+    header_idx = _find_header_row(all_rows)
+    if header_idx == -1:
+        print("ERROR: could not find header row with 'First Name'.")
+        print(f"  First 5 rows: {all_rows[:5]}")
+        return
+
+    if header_idx > 0:
+        print(f"  Skipped {header_idx} metadata row(s) before headers")
+
+    headers   = all_rows[header_idx]
+    data_rows = all_rows[header_idx + 1:]
+    hmap      = _header_map(headers)
     print(f"  Columns: {headers}")
-    print(f"  {len(data_rows)} connections found")
+    print(f"  {len(data_rows)} connections to process")
 
     # Load existing contacts to deduplicate
-    dest = _book()
-    ws_contacts = dest.worksheet(TAB_CONTACTS)
+    ws_contacts = _book().worksheet(TAB_CONTACTS)
     existing = ws_contacts.get_all_records()
     existing_names = {r.get("Name", "").strip().lower() for r in existing}
     next_id = len(existing) + 1
 
-    added = 0
-    skipped = 0
     new_rows = []
+    added = skipped = 0
 
     for row in data_rows:
-        def get(col_key: str) -> str:
-            idx = hmap.get(col_key)
-            return row[idx].strip() if idx is not None and idx < len(row) else ""
+        def get(col_key: str, _row: list = row, _hmap: dict = hmap) -> str:
+            idx = _hmap.get(col_key)
+            return _row[idx].strip() if idx is not None and idx < len(_row) else ""
 
         first    = get(COL_FIRST)
         last     = get(COL_LAST)
@@ -100,78 +114,15 @@ def main() -> None:
         added += 1
 
     if new_rows:
-        ws_contacts.append_rows(new_rows, value_input_option="USER_ENTERED")
+        # Write in batches of 500 to avoid API limits
+        for i in range(0, len(new_rows), 500):
+            ws_contacts.append_rows(new_rows[i:i+500], value_input_option="USER_ENTERED")
+            print(f"  Written rows {i+1}–{min(i+500, len(new_rows))}")
         print(f"Done: {added} contacts added, {skipped} duplicates skipped.")
     else:
         print(f"Done: nothing new to add ({skipped} duplicates skipped).")
 
     print(f"Sheet: https://docs.google.com/spreadsheets/d/{config.SHEET_ID}/edit")
-
-
-if __name__ == "__main__":
-    main()
-
-    hmap = _header_map(headers)
-    print(f"  Columns found: {headers}")
-    data_rows = all_rows[1:]
-    print(f"  {len(data_rows)} connections to process")
-
-    # Load existing contacts to deduplicate
-    dest = _book()
-    ws_contacts = dest.worksheet(TAB_CONTACTS)
-    existing = ws_contacts.get_all_records()
-    existing_names = {r.get("Name", "").strip().lower() for r in existing}
-    next_id = len(existing) + 1
-
-    added = 0
-    skipped = 0
-    new_rows = []
-
-    for row in data_rows:
-        def get(col_key: str) -> str:
-            idx = hmap.get(col_key)
-            return row[idx].strip() if idx is not None and idx < len(row) else ""
-
-        first    = get(COL_FIRST)
-        last     = get(COL_LAST)
-        email    = get(COL_EMAIL)
-        company  = get(COL_COMPANY)
-        position = get(COL_POSITION)
-
-        if not first and not last:
-            continue
-
-        full_name = f"{first} {last}".strip()
-        if full_name.lower() in existing_names:
-            skipped += 1
-            continue
-
-        linkedin_url = _build_linkedin_url(first, last)
-
-        new_rows.append([
-            str(next_id),    # ID
-            full_name,       # Name
-            company,         # Fund
-            position,        # Role
-            linkedin_url,    # LinkedIn (best-effort)
-            email,           # Email
-            "",              # Last Met
-            "2",             # Priority (default: medium)
-            "",              # Cadence Override
-            "",              # Background
-            "",              # Tags
-        ])
-        existing_names.add(full_name.lower())
-        next_id += 1
-        added += 1
-
-    if new_rows:
-        ws_contacts.append_rows(new_rows, value_input_option="USER_ENTERED")
-        print(f"Done: {added} contacts added, {skipped} duplicates skipped.")
-    else:
-        print(f"Done: no new contacts to add ({skipped} duplicates skipped).")
-
-    print(f"Open your sheet: https://docs.google.com/spreadsheets/d/{config.SHEET_ID}/edit")
 
 
 if __name__ == "__main__":
