@@ -98,8 +98,28 @@ def main() -> None:
     print("         OK")
 
     print(f"Step 2/4: Opening sheet {sheet_id}…")
-    spreadsheet = client.open_by_key(sheet_id)
-    print(f"         OK — '{spreadsheet.title}'")
+    try:
+        spreadsheet = client.open_by_key(sheet_id)
+        print(f"         OK — '{spreadsheet.title}'")
+    except gspread.exceptions.APIError as e:
+        print(f"         FAILED — HTTP {e.response.status_code}")
+        print(f"         Response body: {e.response.text}")
+        raise
+    except gspread.exceptions.SpreadsheetNotFound:
+        print("         FAILED — SpreadsheetNotFound")
+        print("         Possible causes:")
+        print("           1. Sheet not shared with service account (check Manage Access)")
+        print("           2. Wrong sheet ID hardcoded in config.py")
+        print(f"          Service account: {json.loads(os.environ['GOOGLE_CREDENTIALS_JSON'])['client_email']}")
+        print(f"          Sheet ID used:   {sheet_id}")
+        # Try listing sheets the service account CAN see
+        print("         Sheets visible to this service account:")
+        try:
+            for s in client.list_spreadsheet_files():
+                print(f"           - {s['name']} ({s['id']})")
+        except Exception as list_err:
+            print(f"           (could not list: {list_err})")
+        raise
 
     print("Step 3/4: Creating tabs and writing headers…")
     ws_funds    = _get_or_create_tab(spreadsheet, TAB_FUNDS, rows=50, cols=10)
