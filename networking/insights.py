@@ -17,16 +17,29 @@ Your job: produce sharp, actionable network intelligence — not generic advice.
 You know the market: distressed debt, high yield bonds, leveraged loans, CLOs, special situations,
 opportunistic credit, direct lending, restructuring advisory, liability management.
 
-Funds that matter in this universe: Ares, Apollo, Oaktree, Carlyle, KKR Credit, Blackstone Credit,
-Cerberus, Elliott, Anchorage, Sculptor, Davidson Kempner, Marathon, Attestor, Aurelius,
-GoldenTree, HPS, Intermediate Capital, Permira Credit, BC Partners Credit, Tikehau, Alcentra,
-Barings, M&G, Napier Park, Chenavari, CVC Credit, Hayfin, Park Square, Octagon, Benefit Street.
+CRITICAL RULE: Every entry in top_actions and relationship_of_the_week MUST reference a REAL PERSON
+from the CONTACTS AT KEY FUNDS list provided. Use their exact name and fund. Never invent names.
+If a contact has no Background, infer from their Role what they likely focus on.
 
 When giving talking points, make them specific and timely — reference current themes:
 rising default cycles, LBO overhang, stressed European credits, liability management exercises,
 distressed-for-control plays, secondary CLO market, direct lending competition, etc.
 
 Return ONLY valid JSON. No markdown fences."""
+
+# Funds the banker cares most about
+TARGET_FUNDS = {
+    "ares", "apollo", "oaktree", "carlyle", "kkr", "blackstone", "cerberus",
+    "elliott", "anchorage", "sculptor", "davidson kempner", "marathon", "attestor",
+    "aurelius", "goldentree", "hps", "intermediate capital", "icg", "permira",
+    "bc partners", "tikehau", "alcentra", "barings", "m&g", "napier park",
+    "chenavari", "cvc credit", "cvc", "hayfin", "park square", "octagon",
+    "benefit street", "bsp", "golub", "blue owl", "owl rock", "sixth street",
+    "bain capital credit", "pimco", "varde", "canyon", "king street",
+    "silver point", "sculptor", "gso", "brigade", "whitebox", "post advisory",
+    "restructuring", "distressed", "credit", "leveraged", "high yield",
+    "direct lending", "special situations", "private credit",
+}
 
 USER_TEMPLATE = """
 Today: {today}
@@ -38,8 +51,8 @@ Never met: {never_met_count}
 Overdue relationships: {overdue_count}
 Active (met in 30d): {active_count}
 
-FUNDS COVERED
-{funds_block}
+CONTACTS AT KEY FUNDS (use these real people for top_actions)
+{key_contacts_block}
 
 RECENT MEETINGS (last 30 days)
 {meetings_block}
@@ -47,21 +60,21 @@ RECENT MEETINGS (last 30 days)
 OVERDUE PRIORITY CONTACTS
 {overdue_block}
 
-CONTACT BACKGROUNDS (sample)
-{backgrounds_block}
+TOP FUNDS COVERAGE
+{funds_block}
 
 Produce a JSON object with exactly these keys:
 {{
   "network_score": <integer 0-100>,
   "score_rationale": "<one sentence>",
-  "executive_summary": "<3-4 sentences of sharp narrative — what does this network look like, what are the gaps, what is the opportunity>",
+  "executive_summary": "<3-4 sentences — what does this network look like, what are the gaps, what is the opportunity>",
   "top_actions": [
     {{
-      "contact": "<name>",
-      "fund": "<fund>",
+      "contact": "<REAL person name from CONTACTS AT KEY FUNDS list above>",
+      "fund": "<their fund>",
       "urgency": "<High|Medium>",
-      "reason": "<why now — be specific>",
-      "talking_point": "<one sharp, specific conversation opener relevant to distressed/credit markets>"
+      "reason": "<why reach out now — reference their role and current market>",
+      "talking_point": "<one sharp conversation opener relevant to their specific role>"
     }}
   ],
   "strategic_insights": [
@@ -70,21 +83,21 @@ Produce a JSON object with exactly these keys:
     "<insight 3>"
   ],
   "coverage_gaps": [
-    "<fund or fund type you should target and why>"
+    "<fund or fund type not yet covered and why it matters>"
   ],
   "market_themes": [
-    "<current theme 1 relevant to distressed/HY/credit that is good for networking conversations>",
+    "<current theme 1 relevant to distressed/HY/credit>",
     "<current theme 2>",
     "<current theme 3>"
   ],
   "relationship_of_the_week": {{
-    "contact": "<name>",
-    "fund": "<fund>",
-    "rationale": "<why this person is most worth investing in this week>"
+    "contact": "<REAL person name from the list>",
+    "fund": "<their fund>",
+    "rationale": "<why this person is most worth investing time in this week>"
   }}
 }}
 
-top_actions: include up to 5 entries, prioritised by urgency and market relevance.
+top_actions: up to 5 entries. MUST be real people from CONTACTS AT KEY FUNDS.
 coverage_gaps: up to 4 entries.
 """
 
@@ -129,13 +142,31 @@ def _fmt_funds(funds: list[dict]) -> str:
     return "\n".join(lines) or "  (none)"
 
 
-def _fmt_backgrounds(contacts: list[dict]) -> str:
+def _is_target_fund(fund_name: str) -> bool:
+    fn = fund_name.lower()
+    return any(kw in fn for kw in TARGET_FUNDS)
+
+
+def _fmt_key_contacts(contacts: list[dict]) -> str:
+    """Return contacts at relevant distressed/credit funds — real people for Claude to recommend."""
+    relevant = [
+        c for c in contacts
+        if _is_target_fund(_s(c.get("Fund"))) and _s(c.get("Name"))
+    ]
+    # Prioritise overdue/never-met at known funds; limit to 40 to keep prompt focused
+    relevant.sort(key=lambda c: (
+        0 if c.get("_days_since") is None else 1,   # never-met first
+        -(c.get("_days_overdue") or 0),              # most overdue next
+    ))
     lines = []
-    for c in contacts[:20]:
-        bg = _s(c.get("Background"))
-        if bg:
-            lines.append(f"  {_s(c.get('Name'))} ({_s(c.get('Fund'))}): {bg[:150]}")
-    return "\n".join(lines) or "  (none)"
+    for c in relevant[:40]:
+        bg   = _s(c.get("Background"))
+        role = _s(c.get("Role"))
+        extra = f" — {bg[:100]}" if bg else (f" — {role}" if role else "")
+        since = c.get("_days_since")
+        status = "never met" if since is None else f"last met {since}d ago"
+        lines.append(f"  {_s(c.get('Name'))} | {_s(c.get('Fund'))} | {role} | {status}{extra}")
+    return "\n".join(lines) or "  (no contacts at target funds found)"
 
 
 def generate_insights(context: dict) -> dict:
@@ -155,10 +186,10 @@ def generate_insights(context: dict) -> dict:
         never_met_count=len(context["never_met"]),
         overdue_count=len(overdue),
         active_count=active_count,
+        key_contacts_block=_fmt_key_contacts(contacts),
         funds_block=_fmt_funds(fund_rows),
         meetings_block=_fmt_meetings(meetings),
         overdue_block=_fmt_overdue(overdue),
-        backgrounds_block=_fmt_backgrounds(contacts),
     )
 
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
