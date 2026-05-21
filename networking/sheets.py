@@ -38,7 +38,8 @@ def _client() -> gspread.Client:
 
 
 def _book() -> gspread.Spreadsheet:
-    return _client().open_by_key(os.environ["SHEET_ID"])
+    import config
+    return _client().open_by_key(config.SHEET_ID)
 
 
 # ---------------------------------------------------------------------------

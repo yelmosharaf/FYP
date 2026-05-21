@@ -1,7 +1,7 @@
 import os
 
-# Google Sheets — set SHEET_ID after running setup_sheets.py
-SHEET_ID = os.environ.get("SHEET_ID", "")
+# Google Sheets
+SHEET_ID = os.environ.get("SHEET_ID", "1-WBZGPRubFQoqmYy-kbIElnPtxX49HxybGTzPeqpnyY")
 GOOGLE_CREDENTIALS_JSON = os.environ.get("GOOGLE_CREDENTIALS_JSON", "")
 
 # Gmail SMTP

@@ -90,7 +90,8 @@ def _get_or_create_tab(spreadsheet, title: str, rows: int = 200, cols: int = 20)
 
 
 def main() -> None:
-    sheet_id = os.environ["SHEET_ID"]
+    import config
+    sheet_id = config.SHEET_ID
 
     print("Step 1/4: Authenticating with Google…")
     client = _client()
