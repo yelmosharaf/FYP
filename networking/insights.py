@@ -117,8 +117,10 @@ def _fmt_overdue(contacts: list[dict]) -> str:
 
 
 def _fmt_funds(funds: list[dict]) -> str:
+    # Cap at 30 most recently touched to keep prompt concise
+    top = sorted(funds, key=lambda f: f.get("last_touch_days") or 9999)[:30]
     lines = []
-    for f in funds:
+    for f in top:
         lines.append(
             f"  {_s(f.get('fund',{}).get('Fund Name'))} — "
             f"{len(f.get('contacts',[]))} contacts — "
