@@ -5,19 +5,15 @@ into the Networking Dashboard Contacts sheet.
 Works with both native Google Sheets AND Excel (.xlsx) files stored in Drive.
 """
 
-import csv
-import io
 import json
 import os
 
 import gspread
-import google.auth.transport.requests
-from google.oauth2.service_account import Credentials
 
 import config
-from sheets import SCOPES, TAB_CONTACTS, _client, _book
+from sheets import TAB_CONTACTS, _client, _book
 
-LINKEDIN_FILE_ID = "1C1USxmZjrokQLG-Q9syK0HMYyTedBXLd"
+LINKEDIN_FILE_ID = "1q8ue4nYRDH5jTJqP_i45x9b-8hKPVxXX613CYFJbkhY"
 
 COL_FIRST    = "first name"
 COL_LAST     = "last name"
@@ -36,27 +32,18 @@ def _build_linkedin_url(first: str, last: str) -> str:
 
 
 def _fetch_as_csv() -> list[list[str]]:
-    """Download the file via Drive export API — works for both xlsx and Sheets."""
-    creds = Credentials.from_service_account_info(
-        json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"]), scopes=SCOPES
-    )
-    creds.refresh(google.auth.transport.requests.Request())
-
-    import urllib.request as ur
-    url = (
-        f"https://www.googleapis.com/drive/v3/files/{LINKEDIN_FILE_ID}/export"
-        f"?mimeType=text%2Fcsv"
-    )
-    req = ur.Request(url, headers={"Authorization": f"Bearer {creds.token}"})
+    """Read rows from a native Google Sheet using gspread."""
+    client = _client()
     try:
-        with ur.urlopen(req) as resp:
-            content = resp.read().decode("utf-8-sig")  # strip BOM if present
-        print(f"  Downloaded via Drive export API ({len(content)} bytes)")
-        reader = csv.reader(io.StringIO(content))
-        return list(reader)
-    except Exception as e:
-        print(f"  Drive export failed: {e}")
+        src = client.open_by_key(LINKEDIN_FILE_ID)
+    except gspread.exceptions.SpreadsheetNotFound:
+        creds_dict = json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"])
+        print("ERROR: sheet not found. Share it with the service account as Viewer:")
+        print(f"  {creds_dict['client_email']}")
         raise
+    rows = src.sheet1.get_all_values()
+    print(f"  Read {len(rows)} rows via gspread")
+    return rows
 
 
 def main() -> None:
