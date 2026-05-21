@@ -89,13 +89,18 @@ coverage_gaps: up to 4 entries.
 """
 
 
+def _s(val) -> str:
+    """Coerce any gspread value (including float NaN) to a clean string."""
+    return str(val or "").strip()
+
+
 def _fmt_meetings(meetings: list[dict]) -> str:
     if not meetings:
         return "  (none logged)"
     lines = []
     for m in meetings[:15]:
-        notes = m.get("Notes", "")[:120]
-        lines.append(f"  {m.get('Date','')}  {m.get('Contact Name','')} ({m.get('Fund','')})  {m.get('Type','')}  {notes}")
+        notes = _s(m.get("Notes"))[:120]
+        lines.append(f"  {_s(m.get('Date'))}  {_s(m.get('Contact Name'))} ({_s(m.get('Fund'))})  {_s(m.get('Type'))}  {notes}")
     return "\n".join(lines)
 
 
@@ -105,7 +110,7 @@ def _fmt_overdue(contacts: list[dict]) -> str:
     lines = []
     for c in contacts[:8]:
         lines.append(
-            f"  {c.get('Name','')} | {c.get('Fund','')} | {c.get('Role','')} | "
+            f"  {_s(c.get('Name'))} | {_s(c.get('Fund'))} | {_s(c.get('Role'))} | "
             f"last met {c.get('_days_since','?')}d ago | overdue {c.get('_days_overdue','?')}d"
         )
     return "\n".join(lines)
@@ -115,7 +120,7 @@ def _fmt_funds(funds: list[dict]) -> str:
     lines = []
     for f in funds:
         lines.append(
-            f"  {f.get('fund',{}).get('Fund Name','')} — "
+            f"  {_s(f.get('fund',{}).get('Fund Name'))} — "
             f"{len(f.get('contacts',[]))} contacts — "
             f"last touch: {f.get('last_touch_days','never')}d ago"
         )
@@ -125,9 +130,9 @@ def _fmt_funds(funds: list[dict]) -> str:
 def _fmt_backgrounds(contacts: list[dict]) -> str:
     lines = []
     for c in contacts[:20]:
-        bg = c.get("Background", "").strip()
+        bg = _s(c.get("Background"))
         if bg:
-            lines.append(f"  {c.get('Name','')} ({c.get('Fund','')}): {bg[:150]}")
+            lines.append(f"  {_s(c.get('Name'))} ({_s(c.get('Fund'))}): {bg[:150]}")
     return "\n".join(lines) or "  (none)"
 
 

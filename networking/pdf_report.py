@@ -254,7 +254,8 @@ def _fund_coverage(story, context, sty):
             status,
         ])
 
-    col_w = [5*cm, 6.5*cm, 1.8*cm, 2*cm, 1.8*cm]
+    avail = PAGE_W - 3*cm
+    col_w = [4*cm, avail - 4*cm - 1.8*cm - 2*cm - 1.8*cm, 1.8*cm, 2*cm, 1.8*cm]
     t = Table(rows, colWidths=col_w, repeatRows=1)
 
     style = [
@@ -333,21 +334,25 @@ def _recent_meetings(story, context, sty):
 
     headers = ["Date", "Contact", "Fund", "Type", "Notes / Action Items"]
     rows = [headers]
+    def _s(val) -> str:
+        return str(val or "").strip()
+
     for m in meetings:
-        notes = m.get("Notes", "")
-        actions = m.get("Action Items", "")
+        notes = _s(m.get("Notes"))
+        actions = _s(m.get("Action Items"))
         combined = notes
         if actions:
             combined += f"  •  Action: {actions}"
         rows.append([
-            m.get("Date", ""),
-            m.get("Contact Name", ""),
-            m.get("Fund", ""),
-            m.get("Type", ""),
+            _s(m.get("Date")),
+            _s(m.get("Contact Name")),
+            _s(m.get("Fund")),
+            _s(m.get("Type")),
             combined[:120],
         ])
 
-    col_w = [1.8*cm, 3.5*cm, 4*cm, 1.6*cm, PAGE_W - 3*cm - 1.8 - 3.5 - 4 - 1.6]
+    avail = PAGE_W - 3*cm
+    col_w = [1.8*cm, 3*cm, 3.5*cm, 1.5*cm, avail - 1.8*cm - 3*cm - 3.5*cm - 1.5*cm]
     t = Table(rows, colWidths=col_w, repeatRows=1)
     t.setStyle(TableStyle([
         ("BACKGROUND",     (0,0), (-1,0),  NAVY),

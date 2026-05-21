@@ -163,7 +163,9 @@ def main() -> None:
         pdf_bytes = build_pdf(context, intel)
         print(f"  PDF built ({len(pdf_bytes):,} bytes)")
     except Exception as exc:
-        print(f"Warning: PDF generation failed ({exc}); sending digest without attachment.")
+        import traceback
+        print(f"Warning: PDF generation failed — sending digest without attachment.")
+        traceback.print_exc()
 
     send_email(html, context["week_label"], pdf_bytes)
 
