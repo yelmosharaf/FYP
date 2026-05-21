@@ -1,12 +1,13 @@
 """
 Weekly networking digest: reads Google Sheets, computes overdue contacts,
-renders an HTML email, and delivers via Gmail SMTP.
+renders an HTML email with a PDF intelligence report, and delivers via Gmail SMTP.
 """
 
 import os
 import smtplib
 import sys
 from datetime import date
+from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from pathlib import Path
@@ -15,6 +16,8 @@ from jinja2 import Environment, FileSystemLoader
 
 import config
 import sheets as sh
+from insights import generate_insights
+from pdf_report import build_pdf
 
 
 def _days_since(last_met_str: str) -> int | None:
@@ -114,12 +117,24 @@ def render_email(context: dict) -> str:
     return template.render(**context)
 
 
-def send_email(html: str, week_label: str) -> None:
-    msg = MIMEMultipart("alternative")
+def send_email(html: str, week_label: str, pdf_bytes: bytes | None = None) -> None:
+    msg = MIMEMultipart("mixed")
     msg["Subject"] = f"Networking Digest — {week_label}"
     msg["From"] = config.SMTP_USER
     msg["To"] = config.DIGEST_TO
-    msg.attach(MIMEText(html, "html"))
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(html, "html"))
+    msg.attach(alt)
+
+    if pdf_bytes:
+        attachment = MIMEApplication(pdf_bytes, _subtype="pdf")
+        attachment.add_header(
+            "Content-Disposition",
+            "attachment",
+            filename=f"Network_Intelligence_{date.today().strftime('%Y-%m-%d')}.pdf",
+        )
+        msg.attach(attachment)
 
     with smtplib.SMTP(config.SMTP_HOST, config.SMTP_PORT) as server:
         server.ehlo()
@@ -140,7 +155,17 @@ def main() -> None:
         print(f"Dry run: preview written to {out.resolve()}")
         return
 
-    send_email(html, context["week_label"])
+    pdf_bytes = None
+    try:
+        print("Generating network intelligence…")
+        intel = generate_insights(context)
+        print(f"  Network score: {intel.get('network_score')}")
+        pdf_bytes = build_pdf(context, intel)
+        print(f"  PDF built ({len(pdf_bytes):,} bytes)")
+    except Exception as exc:
+        print(f"Warning: PDF generation failed ({exc}); sending digest without attachment.")
+
+    send_email(html, context["week_label"], pdf_bytes)
 
 
 if __name__ == "__main__":
