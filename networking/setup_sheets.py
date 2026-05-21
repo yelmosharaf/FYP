@@ -97,6 +97,24 @@ def main() -> None:
     client = _client()
     print("         OK")
 
+    # Raw Sheets API probe — shows exact error before gspread wraps it
+    print("Step 1b: Raw Sheets API probe…")
+    import google.auth.transport.requests
+    creds = Credentials.from_service_account_info(
+        json.loads(os.environ["GOOGLE_CREDENTIALS_JSON"]), scopes=SCOPES
+    )
+    creds.refresh(google.auth.transport.requests.Request())
+    import urllib.request as _ur
+    req = _ur.Request(
+        f"https://sheets.googleapis.com/v4/spreadsheets/{sheet_id}?fields=spreadsheetId",
+        headers={"Authorization": f"Bearer {creds.token}"},
+    )
+    try:
+        with _ur.urlopen(req) as resp:
+            print(f"         Sheets API OK — {resp.read()}")
+    except Exception as probe_err:
+        print(f"         Sheets API raw error: {probe_err}")
+
     print(f"Step 2/4: Opening sheet {sheet_id}…")
     try:
         spreadsheet = client.open_by_key(sheet_id)
