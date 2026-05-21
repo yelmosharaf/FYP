@@ -164,7 +164,7 @@ def generate_insights(context: dict) -> dict:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=2000,
+        max_tokens=4096,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
