@@ -28,15 +28,15 @@ def _days_since(last_met_str: str) -> int | None:
 
 
 def _cadence(contact: dict) -> int:
-    override = str(contact.get("Cadence Override (days)", "")).strip()
+    override = str(contact.get("Cadence Override (days)") or "").strip()
     if override.isdigit():
         return int(override)
-    priority = int(contact.get("Priority", 3) or 3)
+    priority = int(contact.get("Priority") or 3)
     return config.CADENCE_DAYS.get(priority, 90)
 
 
 def _days_overdue(contact: dict) -> int | None:
-    since = _days_since(contact.get("Last Met", ""))
+    since = _days_since(str(contact.get("Last Met") or ""))
     cad = _cadence(contact)
     if since is None:
         return None  # never met — handled separately
@@ -56,9 +56,9 @@ def build_context() -> dict:
     on_track = []
 
     for c in contacts:
-        if not c.get("Name", "").strip():
+        if not str(c.get("Name") or "").strip():
             continue
-        since = _days_since(c.get("Last Met", ""))
+        since = _days_since(str(c.get("Last Met") or ""))
         od = _days_overdue(c)
 
         c["_days_since"] = since
@@ -87,7 +87,7 @@ def build_context() -> dict:
                 "last_touch_days": None,
             }
     for c in contacts:
-        fn = c.get("Fund", "").strip()
+        fn = str(c.get("Fund") or "").strip()
         if fn not in fund_map:
             fund_map[fn] = {"fund": {"Fund Name": fn}, "contacts": [], "last_touch_days": None}
         fund_map[fn]["contacts"].append(c)
