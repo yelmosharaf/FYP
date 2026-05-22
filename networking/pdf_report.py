@@ -152,63 +152,53 @@ def _build_page1(context, intel):
     story.append(Spacer(1, 0.25*cm))
 
     # ── Targets
-    story.append(_banner("YOUR TARGETS THIS WEEK"))
+    story.append(_banner("YOUR TARGETS"))
     story.append(Spacer(1, 0.1*cm))
 
-    actions  = intel.get("top_actions", [])[:5]
-    rot_w    = intel.get("relationship_of_the_week", {})
-    num_w    = 0.5*cm
-    name_w   = 3.8*cm
-    badge_w  = 1.6*cm
-    detail_w = CW - num_w - name_w - badge_w
+    actions = intel.get("top_actions", [])[:20]
+    rot_w   = intel.get("relationship_of_the_week", {})
+    num_w   = 0.5*cm
+    name_w  = 4*cm
+    role_w  = 3*cm
+    tp_w    = CW - num_w - name_w - role_w
 
     rows = []
     for i, a in enumerate(actions, 1):
-        urg    = _s(a.get("urgency", "Medium"))
-        is_hi  = urg == "High"
         is_rw  = _s(a.get("contact")) == _s(rot_w.get("contact"))
-
-        urg_b  = _badge("HIGH" if is_hi else "MED",
-                        RED_BG if is_hi else AMB_BG,
-                        RED_TC if is_hi else AMB_TC)
-
-        name_c = [_p(f"<b>{_s(a.get('contact'))}</b>", fontSize=9, leading=12)]
-        name_c.append(_p(_s(a.get("fund")), fontSize=7.5, textColor=GRAY, leading=10))
-        if is_rw:
-            name_c.append(Spacer(1, 2))
-            name_c.append(_badge("★ FOCUS", PUR_BG, PUR_TC, w=2*cm))
-
-        det_c  = [
-            _p(f"<b>Why:</b> {_s(a.get('reason'))}", fontSize=8, leading=11),
-            Spacer(1, 3),
-            _p(f"<i>{_s(a.get('talking_point'))}</i>",
-               fontSize=7.5, fontName="Helvetica-Oblique",
-               textColor=colors.HexColor("#374151"), leading=11),
-        ]
+        name_c = _p(
+            f"<b>{_s(a.get('contact'))}</b>" + (" ★" if is_rw else ""),
+            fontSize=8, leading=11,
+        )
+        fund_c = _p(_s(a.get("fund")), fontSize=7, textColor=GRAY, leading=10)
+        role_c = _p(_s(a.get("reason")), fontSize=7.5, textColor=colors.HexColor("#374151"),
+                    leading=10)
+        tp_c   = _p(f"<i>{_s(a.get('talking_point'))}</i>",
+                    fontSize=7.5, fontName="Helvetica-Oblique",
+                    textColor=NAVY_MID, leading=10)
 
         rows.append([
-            _p(f"<b>{i}</b>", fontSize=9, fontName="Helvetica-Bold",
-               textColor=GRAY, alignment=TA_CENTER, leading=12),
-            name_c,
-            urg_b,
-            det_c,
+            _p(f"<b>{i}</b>", fontSize=8, fontName="Helvetica-Bold",
+               textColor=GRAY, alignment=TA_CENTER, leading=11),
+            [name_c, fund_c],
+            role_c,
+            tp_c,
         ])
 
     if rows:
-        tgt = Table(rows, colWidths=[num_w, name_w, badge_w, detail_w])
+        tgt = Table(rows, colWidths=[num_w, name_w, role_w, tp_w])
         bg_cmds = [("BACKGROUND", (0,i), (-1,i), OFF_WHITE if i%2==0 else W)
                    for i in range(len(rows))]
         tgt.setStyle(TableStyle([
             ("VALIGN",        (0,0), (-1,-1), "TOP"),
-            ("TOPPADDING",    (0,0), (-1,-1), 7),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 7),
+            ("TOPPADDING",    (0,0), (-1,-1), 5),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
             ("LEFTPADDING",   (0,0), (-1,-1), 5),
             ("LINEBELOW",     (0,0), (-1,-1), 0.5, L_GRAY),
             *bg_cmds,
         ]))
         story.append(tgt)
     else:
-        story.append(_p("No priority actions identified.", textColor=GRAY))
+        story.append(_p("No targets identified.", textColor=GRAY))
 
     # ── Executive summary
     summ = _s(intel.get("executive_summary"))

@@ -97,7 +97,9 @@ Produce a JSON object with exactly these keys:
   }}
 }}
 
-top_actions: up to 5 entries. MUST be real people from CONTACTS AT KEY FUNDS.
+top_actions: exactly 20 entries. MUST be real people from CONTACTS AT KEY FUNDS.
+Prioritise VPs, Directors, Principals, MDs, Portfolio Managers — mid-to-senior level.
+Exclude analysts and interns. Each talking_point must be one punchy sentence.
 coverage_gaps: up to 4 entries.
 """
 
@@ -142,29 +144,49 @@ def _fmt_funds(funds: list[dict]) -> str:
     return "\n".join(lines) or "  (none)"
 
 
+MID_LEVEL_KEYWORDS = [
+    "vice president", "vp ", " vp", "director", "principal", "managing director",
+    "md ", " md", "portfolio manager", "investment manager", "credit manager",
+    "associate director", "senior associate", "senior analyst", "associate partner",
+    "partner", "head of", "senior vice president", "svp",
+]
+
+JUNIOR_KEYWORDS = ["analyst", "intern", "graduate", "junior", "trainee", "assistant"]
+
+
+def _seniority_score(role: str) -> int:
+    """Higher = more mid-level / senior — better target for a restructuring banker."""
+    r = role.lower()
+    if any(kw in r for kw in JUNIOR_KEYWORDS):
+        return 0
+    if any(kw in r for kw in MID_LEVEL_KEYWORDS):
+        return 2
+    return 1  # unknown seniority — include but deprioritise
+
+
 def _is_target_fund(fund_name: str) -> bool:
     fn = fund_name.lower()
     return any(kw in fn for kw in TARGET_FUNDS)
 
 
 def _fmt_key_contacts(contacts: list[dict]) -> str:
-    """Return contacts at relevant distressed/credit funds — real people for Claude to recommend."""
+    """Contacts at relevant funds, ranked by seniority then status."""
     relevant = [
         c for c in contacts
         if _is_target_fund(_s(c.get("Fund"))) and _s(c.get("Name"))
     ]
-    # Prioritise overdue/never-met at known funds; limit to 40 to keep prompt focused
     relevant.sort(key=lambda c: (
-        0 if c.get("_days_since") is None else 1,   # never-met first
-        -(c.get("_days_overdue") or 0),              # most overdue next
+        -_seniority_score(_s(c.get("Role"))),        # mid-level first
+        0 if c.get("_days_since") is None else 1,    # never-met before met
+        -(c.get("_days_overdue") or 0),
     ))
     lines = []
-    for c in relevant[:40]:
-        bg   = _s(c.get("Background"))
-        role = _s(c.get("Role"))
-        extra = f" — {bg[:100]}" if bg else (f" — {role}" if role else "")
-        since = c.get("_days_since")
+    for c in relevant[:60]:
+        bg     = _s(c.get("Background"))
+        role   = _s(c.get("Role"))
+        since  = c.get("_days_since")
         status = "never met" if since is None else f"last met {since}d ago"
+        extra  = f" | {bg[:80]}" if bg else ""
         lines.append(f"  {_s(c.get('Name'))} | {_s(c.get('Fund'))} | {role} | {status}{extra}")
     return "\n".join(lines) or "  (no contacts at target funds found)"
 
