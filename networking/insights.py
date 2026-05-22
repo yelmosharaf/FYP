@@ -217,7 +217,7 @@ def generate_insights(context: dict) -> dict:
     client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     response = client.messages.create(
         model="claude-sonnet-4-6",
-        max_tokens=4096,
+        max_tokens=8192,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": prompt}],
     )
@@ -225,4 +225,14 @@ def generate_insights(context: dict) -> dict:
     raw = response.content[0].text.strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
-    return json.loads(raw)
+
+    # If JSON is truncated, attempt to close it so we still get a partial result
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Count open braces/brackets and close them
+        raw = raw.rstrip().rstrip(",")
+        open_brackets = raw.count("[") - raw.count("]")
+        open_braces   = raw.count("{") - raw.count("}")
+        raw += "]" * max(open_brackets, 0) + "}" * max(open_braces, 0)
+        return json.loads(raw)
