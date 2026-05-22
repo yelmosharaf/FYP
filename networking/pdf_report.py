@@ -151,54 +151,70 @@ def _build_page1(context, intel):
 
     story.append(Spacer(1, 0.25*cm))
 
-    # ── Targets
-    story.append(_banner("YOUR TARGETS"))
-    story.append(Spacer(1, 0.1*cm))
+    # ── Targets table
+    story.append(_banner("YOUR TARGETS  ·  LONDON"))
+    story.append(Spacer(1, 0.08*cm))
 
     actions = intel.get("top_actions", [])[:20]
     rot_w   = intel.get("relationship_of_the_week", {})
-    num_w   = 0.5*cm
-    name_w  = 4*cm
-    role_w  = 3*cm
-    tp_w    = CW - num_w - name_w - role_w
 
-    rows = []
+    # Column widths: # | Name + Fund | Talking point
+    num_w  = 0.55*cm
+    name_w = 4.5*cm
+    tp_w   = CW - num_w - name_w
+
+    # Header row
+    hdr_style = dict(fontSize=7, fontName="Helvetica-Bold", textColor=W, leading=9)
+    header = [
+        _p("#",            **hdr_style, alignment=TA_CENTER),
+        _p("NAME / FUND",  **hdr_style),
+        _p("WHY REACH OUT  ·  TALKING POINT", **hdr_style),
+    ]
+
+    rows = [header]
     for i, a in enumerate(actions, 1):
-        is_rw  = _s(a.get("contact")) == _s(rot_w.get("contact"))
-        name_c = _p(
-            f"<b>{_s(a.get('contact'))}</b>" + (" ★" if is_rw else ""),
-            fontSize=8, leading=11,
-        )
-        fund_c = _p(_s(a.get("fund")), fontSize=7, textColor=GRAY, leading=10)
-        role_c = _p(_s(a.get("reason")), fontSize=7.5, textColor=colors.HexColor("#374151"),
-                    leading=10)
-        tp_c   = _p(f"<i>{_s(a.get('talking_point'))}</i>",
-                    fontSize=7.5, fontName="Helvetica-Oblique",
-                    textColor=NAVY_MID, leading=10)
-
+        is_rw   = _s(a.get("contact")) == _s(rot_w.get("contact"))
+        star    = "  ★" if is_rw else ""
+        name    = _p(f"<b>{_s(a.get('contact'))}{star}</b>", fontSize=8,
+                     fontName="Helvetica-Bold", textColor=NAVY, leading=11)
+        fund    = _p(_s(a.get("fund")), fontSize=7, textColor=GOLD,
+                     fontName="Helvetica-Bold", leading=10)
+        reason  = _p(_s(a.get("reason")), fontSize=7.5,
+                     textColor=colors.HexColor("#1e293b"), leading=11)
+        tp      = _p(f"<i>{_s(a.get('talking_point'))}</i>", fontSize=7.5,
+                     fontName="Helvetica-Oblique",
+                     textColor=colors.HexColor("#374151"), leading=11)
         rows.append([
             _p(f"<b>{i}</b>", fontSize=8, fontName="Helvetica-Bold",
                textColor=GRAY, alignment=TA_CENTER, leading=11),
-            [name_c, fund_c],
-            role_c,
-            tp_c,
+            [name, fund],
+            [reason, Spacer(1, 2), tp],
         ])
 
-    if rows:
-        tgt = Table(rows, colWidths=[num_w, name_w, role_w, tp_w])
-        bg_cmds = [("BACKGROUND", (0,i), (-1,i), OFF_WHITE if i%2==0 else W)
-                   for i in range(len(rows))]
+    if len(rows) > 1:
+        tgt = Table(rows, colWidths=[num_w, name_w, tp_w], repeatRows=1)
+        bg_cmds = [
+            ("BACKGROUND", (0, i), (-1, i), OFF_WHITE if i % 2 == 0 else W)
+            for i in range(1, len(rows))
+        ]
         tgt.setStyle(TableStyle([
-            ("VALIGN",        (0,0), (-1,-1), "TOP"),
-            ("TOPPADDING",    (0,0), (-1,-1), 5),
-            ("BOTTOMPADDING", (0,0), (-1,-1), 5),
-            ("LEFTPADDING",   (0,0), (-1,-1), 5),
-            ("LINEBELOW",     (0,0), (-1,-1), 0.5, L_GRAY),
+            # Header
+            ("BACKGROUND",    (0,0), (-1,0),  NAVY),
+            ("TOPPADDING",    (0,0), (-1,0),  6),
+            ("BOTTOMPADDING", (0,0), (-1,0),  6),
+            ("LEFTPADDING",   (0,0), (-1,0),  6),
+            # Body
+            ("VALIGN",        (0,1), (-1,-1), "TOP"),
+            ("TOPPADDING",    (0,1), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,1), (-1,-1), 6),
+            ("LEFTPADDING",   (0,1), (-1,-1), 6),
+            ("LINEBELOW",     (0,0), (-1,-1), 0.4, L_GRAY),
+            ("LINEAFTER",     (0,0), (1,-1),  0.4, L_GRAY),
             *bg_cmds,
         ]))
         story.append(tgt)
     else:
-        story.append(_p("No targets identified.", textColor=GRAY))
+        story.append(_p("No London targets identified.", textColor=GRAY))
 
     # ── Executive summary
     summ = _s(intel.get("executive_summary"))

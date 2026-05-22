@@ -98,6 +98,7 @@ Produce a JSON object with exactly these keys:
 }}
 
 top_actions: exactly 20 entries. MUST be real people from CONTACTS AT KEY FUNDS.
+LONDON ONLY — skip anyone without a [London confirmed] or [London likely] tag.
 Prioritise VPs, Directors, Principals, MDs, Portfolio Managers — mid-to-senior level.
 Exclude analysts and interns. Each talking_point must be one punchy sentence.
 coverage_gaps: up to 4 entries.
@@ -153,15 +154,41 @@ MID_LEVEL_KEYWORDS = [
 
 JUNIOR_KEYWORDS = ["analyst", "intern", "graduate", "junior", "trainee", "assistant"]
 
+LONDON_KEYWORDS = [
+    "london", "uk", "united kingdom", "england", "city of london",
+    "canary wharf", "mayfair", "belgravia",
+]
+
+# Funds with significant London presence — extra weight for location scoring
+LONDON_FUNDS = {
+    "ares", "apollo", "oaktree", "carlyle", "kkr", "blackstone", "cerberus",
+    "elliott", "davidson kempner", "attestor", "aurelius", "goldentree", "hps",
+    "intermediate capital", "icg", "permira", "bc partners", "tikehau", "alcentra",
+    "barings", "m&g", "napier park", "chenavari", "cvc credit", "hayfin",
+    "park square", "benefit street", "bluebay", "man glenwood", "man group",
+    "distressed", "credit", "restructuring",
+}
+
 
 def _seniority_score(role: str) -> int:
-    """Higher = more mid-level / senior — better target for a restructuring banker."""
     r = role.lower()
     if any(kw in r for kw in JUNIOR_KEYWORDS):
         return 0
     if any(kw in r for kw in MID_LEVEL_KEYWORDS):
         return 2
-    return 1  # unknown seniority — include but deprioritise
+    return 1
+
+
+def _london_score(contact: dict) -> int:
+    """2 = explicit London signal, 1 = fund likely has London office, 0 = unknown/other."""
+    text = (_s(contact.get("Background")) + " " + _s(contact.get("Role")) +
+            " " + _s(contact.get("Tags"))).lower()
+    if any(kw in text for kw in LONDON_KEYWORDS):
+        return 2
+    fund = _s(contact.get("Fund")).lower()
+    if any(kw in fund for kw in LONDON_FUNDS):
+        return 1
+    return 0
 
 
 def _is_target_fund(fund_name: str) -> bool:
@@ -170,14 +197,16 @@ def _is_target_fund(fund_name: str) -> bool:
 
 
 def _fmt_key_contacts(contacts: list[dict]) -> str:
-    """Contacts at relevant funds, ranked by seniority then status."""
+    """London-based contacts at relevant funds, ranked by seniority."""
     relevant = [
         c for c in contacts
         if _is_target_fund(_s(c.get("Fund"))) and _s(c.get("Name"))
+        and _london_score(c) >= 1   # exclude contacts with no London signal
     ]
     relevant.sort(key=lambda c: (
-        -_seniority_score(_s(c.get("Role"))),        # mid-level first
-        0 if c.get("_days_since") is None else 1,    # never-met before met
+        -_london_score(c),                            # explicit London first
+        -_seniority_score(_s(c.get("Role"))),         # mid-level first
+        0 if c.get("_days_since") is None else 1,
         -(c.get("_days_overdue") or 0),
     ))
     lines = []
@@ -186,9 +215,12 @@ def _fmt_key_contacts(contacts: list[dict]) -> str:
         role   = _s(c.get("Role"))
         since  = c.get("_days_since")
         status = "never met" if since is None else f"last met {since}d ago"
+        loc    = "[London confirmed]" if _london_score(c) == 2 else "[London likely]"
         extra  = f" | {bg[:80]}" if bg else ""
-        lines.append(f"  {_s(c.get('Name'))} | {_s(c.get('Fund'))} | {role} | {status}{extra}")
-    return "\n".join(lines) or "  (no contacts at target funds found)"
+        lines.append(
+            f"  {_s(c.get('Name'))} | {_s(c.get('Fund'))} | {role} | {loc} | {status}{extra}"
+        )
+    return "\n".join(lines) or "  (no London contacts at target funds found)"
 
 
 def generate_insights(context: dict) -> dict:
