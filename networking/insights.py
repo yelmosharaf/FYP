@@ -118,8 +118,8 @@ Produce a JSON object with exactly these keys:
       "contact": "<REAL person name from CONTACTS AT KEY FUNDS list above>",
       "fund": "<their fund>",
       "urgency": "<High|Medium>",
-      "reason": "<why reach out now — one line>",
-      "talking_point": "<one sharp conversation opener relevant to their specific role>"
+      "reason": "<ONE line about THIS PERSON specifically — their seniority, what they decide on, why they matter to you right now. Do NOT describe the fund. The banker already knows what every fund does.>",
+      "talking_point": "<the exact opening line you would send them — specific, timely, no fluff>"
     }}
   ],
   "relationship_of_the_week": {{
