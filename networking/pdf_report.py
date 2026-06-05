@@ -257,36 +257,39 @@ def _build_page2(context, intel):
             ]))
             story.append(theme_row)
 
-            # Group by fund within theme
-            by_fund: dict[str, list] = {}
-            for c in contacts:
-                by_fund.setdefault(c["fund"], []).append(c)
-
+            # One row per person, showing real background when available
             rows = []
-            for fund, people in sorted(by_fund.items()):
-                names = ",  ".join(
-                    p["name"] + (f" ({p['role']})" if p.get("role") else "")
-                    for p in people
-                )
-                rows.append([
-                    _p(f"<b>{fund}</b>", fontSize=8, fontName="Helvetica-Bold",
+            for c in contacts:
+                role = c.get("role", "")
+                bg   = c.get("background", "")
+
+                name_cell = [
+                    _p(f"<b>{c['name']}</b>", fontSize=8, fontName="Helvetica-Bold",
                        textColor=NAVY, leading=11),
-                    _p(names, fontSize=7.5, textColor=colors.HexColor("#374151"),
-                       leading=11),
-                ])
+                ]
+                if role:
+                    name_cell.append(_p(role, fontSize=7, textColor=GRAY, leading=10))
+
+                if bg:
+                    detail = _p(bg[:160], fontSize=7.5,
+                                textColor=colors.HexColor("#374151"), leading=11)
+                else:
+                    detail = _p(c["fund"], fontSize=7.5, textColor=GRAY, leading=11)
+
+                rows.append([name_cell, detail])
 
             if rows:
-                t = Table(rows, colWidths=[3.5*cm, CW - 3.5*cm])
-                bg = [("BACKGROUND", (0,i), (-1,i), OFF_WHITE if i%2==0 else W)
-                      for i in range(len(rows))]
+                t = Table(rows, colWidths=[3.8*cm, CW - 3.8*cm])
+                bg_cmds = [("BACKGROUND", (0,i), (-1,i), OFF_WHITE if i%2==0 else W)
+                           for i in range(len(rows))]
                 t.setStyle(TableStyle([
                     ("VALIGN",        (0,0), (-1,-1), "TOP"),
-                    ("TOPPADDING",    (0,0), (-1,-1), 4),
-                    ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                    ("TOPPADDING",    (0,0), (-1,-1), 5),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 5),
                     ("LEFTPADDING",   (0,0), (-1,-1), 6),
                     ("LINEAFTER",     (0,0), (0,-1),  0.4, L_GRAY),
                     ("LINEBELOW",     (0,0), (-1,-1), 0.3, L_GRAY),
-                    *bg,
+                    *bg_cmds,
                 ]))
                 story.append(t)
             story.append(Spacer(1, 0.2*cm))

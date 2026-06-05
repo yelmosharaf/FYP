@@ -191,7 +191,12 @@ def group_contacts_by_theme(contacts: list[dict]) -> dict:
         if key in seen:
             continue
         seen.add(key)
-        buckets[theme].append({"name": name, "fund": fund, "role": role})
+        buckets[theme].append({
+            "name": name,
+            "fund": fund,
+            "role": role,
+            "background": _s(c.get("Background")),
+        })
     for theme in buckets:
         buckets[theme].sort(key=lambda x: (x["fund"].lower(), x["name"].lower()))
     return {t: v for t, v in buckets.items() if v}
