@@ -27,7 +27,6 @@ distressed-for-control plays, secondary CLO market, direct lending competition, 
 
 Return ONLY valid JSON. No markdown fences."""
 
-# Funds the banker cares most about
 TARGET_FUNDS = {
     "ares", "apollo", "oaktree", "carlyle", "kkr", "blackstone", "cerberus",
     "elliott", "anchorage", "sculptor", "davidson kempner", "marathon", "attestor",
@@ -36,10 +35,57 @@ TARGET_FUNDS = {
     "chenavari", "cvc credit", "cvc", "hayfin", "park square", "octagon",
     "benefit street", "bsp", "golub", "blue owl", "owl rock", "sixth street",
     "bain capital credit", "pimco", "varde", "canyon", "king street",
-    "silver point", "sculptor", "gso", "brigade", "whitebox", "post advisory",
+    "silver point", "gso", "brigade", "whitebox", "post advisory",
     "restructuring", "distressed", "credit", "leveraged", "high yield",
     "direct lending", "special situations", "private credit",
 }
+
+THEME_MAP = [
+    ("Deep Distress / Special Sits", [
+        "elliott", "cerberus", "anchorage", "aurelius", "marathon", "attestor",
+        "davidson kempner", "sculptor", "king street", "silver point", "whitebox",
+        "varde", "canyon", "brigade", "post advisory", "cyrus",
+    ]),
+    ("High Yield / Leveraged Credit", [
+        "oaktree", "goldentree", "barings", "m&g", "alcentra", "bluebay",
+        "apollo", "carlyle", "man glenwood", "man group", "pimco",
+    ]),
+    ("Direct Lending / Private Credit", [
+        "ares", "hps", "intermediate capital", "icg", "hayfin", "park square",
+        "benefit street", "blue owl", "owl rock", "golub", "sixth street",
+        "permira", "bc partners", "tikehau", "bain capital credit",
+    ]),
+    ("CLOs / Structured Credit", [
+        "octagon", "napier park", "chenavari", "cvc credit", "nuveen", "pgim",
+        "blackstone credit",
+    ]),
+    ("Multi-Strategy / Opportunistic", [
+        "kkr", "blackstone", "bain capital", "apollo global",
+    ]),
+]
+
+LONDON_KEYWORDS = [
+    "london", "uk", "united kingdom", "england", "city of london",
+    "canary wharf", "mayfair", "belgravia",
+]
+
+LONDON_FUNDS = {
+    "ares", "apollo", "oaktree", "carlyle", "kkr", "blackstone", "cerberus",
+    "elliott", "davidson kempner", "attestor", "aurelius", "goldentree", "hps",
+    "intermediate capital", "icg", "permira", "bc partners", "tikehau", "alcentra",
+    "barings", "m&g", "napier park", "chenavari", "cvc credit", "hayfin",
+    "park square", "benefit street", "bluebay", "man glenwood", "man group",
+    "distressed", "credit", "restructuring",
+}
+
+MID_LEVEL_KEYWORDS = [
+    "vice president", "vp ", " vp", "director", "principal", "managing director",
+    "md ", " md", "portfolio manager", "investment manager", "credit manager",
+    "associate director", "senior associate", "senior analyst", "associate partner",
+    "partner", "head of", "senior vice president", "svp",
+]
+
+JUNIOR_KEYWORDS = ["analyst", "intern", "graduate", "junior", "trainee", "assistant"]
 
 USER_TEMPLATE = """
 Today: {today}
@@ -67,28 +113,14 @@ Produce a JSON object with exactly these keys:
 {{
   "network_score": <integer 0-100>,
   "score_rationale": "<one sentence>",
-  "executive_summary": "<3-4 sentences — what does this network look like, what are the gaps, what is the opportunity>",
   "top_actions": [
     {{
       "contact": "<REAL person name from CONTACTS AT KEY FUNDS list above>",
       "fund": "<their fund>",
       "urgency": "<High|Medium>",
-      "reason": "<why reach out now — reference their role and current market>",
+      "reason": "<why reach out now — one line>",
       "talking_point": "<one sharp conversation opener relevant to their specific role>"
     }}
-  ],
-  "strategic_insights": [
-    "<insight 1 — specific observation about network health or gaps>",
-    "<insight 2>",
-    "<insight 3>"
-  ],
-  "coverage_gaps": [
-    "<fund or fund type not yet covered and why it matters>"
-  ],
-  "market_themes": [
-    "<current theme 1 relevant to distressed/HY/credit>",
-    "<current theme 2>",
-    "<current theme 3>"
   ],
   "relationship_of_the_week": {{
     "contact": "<REAL person name from the list>",
@@ -101,13 +133,68 @@ top_actions: exactly 20 entries. MUST be real people from CONTACTS AT KEY FUNDS.
 LONDON ONLY — skip anyone without a [London confirmed] or [London likely] tag.
 Prioritise VPs, Directors, Principals, MDs, Portfolio Managers — mid-to-senior level.
 Exclude analysts and interns. Each talking_point must be one punchy sentence.
-coverage_gaps: up to 4 entries.
 """
 
 
 def _s(val) -> str:
-    """Coerce any gspread value (including float NaN) to a clean string."""
     return str(val or "").strip()
+
+
+def _seniority_score(role: str) -> int:
+    r = role.lower()
+    if any(kw in r for kw in JUNIOR_KEYWORDS):
+        return 0
+    if any(kw in r for kw in MID_LEVEL_KEYWORDS):
+        return 2
+    return 1
+
+
+def _london_score(contact: dict) -> int:
+    text = (_s(contact.get("Background")) + " " + _s(contact.get("Role")) +
+            " " + _s(contact.get("Tags"))).lower()
+    if any(kw in text for kw in LONDON_KEYWORDS):
+        return 2
+    fund = _s(contact.get("Fund")).lower()
+    if any(kw in fund for kw in LONDON_FUNDS):
+        return 1
+    return 0
+
+
+def _is_target_fund(fund_name: str) -> bool:
+    fn = fund_name.lower()
+    return any(kw in fn for kw in TARGET_FUNDS)
+
+
+def _theme_for_fund(fund_name: str) -> str | None:
+    fn = fund_name.lower()
+    for theme, keywords in THEME_MAP:
+        if any(kw in fn for kw in keywords):
+            return theme
+    return None
+
+
+def group_contacts_by_theme(contacts: list[dict]) -> dict:
+    buckets: dict[str, list] = {t: [] for t, _ in THEME_MAP}
+    seen: set = set()
+    for c in contacts:
+        name = _s(c.get("Name"))
+        fund = _s(c.get("Fund"))
+        role = _s(c.get("Role"))
+        if not name or not fund:
+            continue
+        if _london_score(c) < 1:
+            continue
+        theme = _theme_for_fund(fund)
+        if theme is None:
+            continue
+        key = (name.lower(), fund.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        buckets[theme].append({"name": name, "fund": fund, "role": role})
+    for theme in buckets:
+        buckets[theme].sort(key=lambda x: (x["fund"].lower(), x["name"].lower()))
+    return {t: v for t, v in buckets.items() if v}
 
 
 def _fmt_meetings(meetings: list[dict]) -> str:
@@ -133,7 +220,6 @@ def _fmt_overdue(contacts: list[dict]) -> str:
 
 
 def _fmt_funds(funds: list[dict]) -> str:
-    # Cap at 30 most recently touched to keep prompt concise
     top = sorted(funds, key=lambda f: f.get("last_touch_days") or 9999)[:30]
     lines = []
     for f in top:
@@ -145,67 +231,15 @@ def _fmt_funds(funds: list[dict]) -> str:
     return "\n".join(lines) or "  (none)"
 
 
-MID_LEVEL_KEYWORDS = [
-    "vice president", "vp ", " vp", "director", "principal", "managing director",
-    "md ", " md", "portfolio manager", "investment manager", "credit manager",
-    "associate director", "senior associate", "senior analyst", "associate partner",
-    "partner", "head of", "senior vice president", "svp",
-]
-
-JUNIOR_KEYWORDS = ["analyst", "intern", "graduate", "junior", "trainee", "assistant"]
-
-LONDON_KEYWORDS = [
-    "london", "uk", "united kingdom", "england", "city of london",
-    "canary wharf", "mayfair", "belgravia",
-]
-
-# Funds with significant London presence — extra weight for location scoring
-LONDON_FUNDS = {
-    "ares", "apollo", "oaktree", "carlyle", "kkr", "blackstone", "cerberus",
-    "elliott", "davidson kempner", "attestor", "aurelius", "goldentree", "hps",
-    "intermediate capital", "icg", "permira", "bc partners", "tikehau", "alcentra",
-    "barings", "m&g", "napier park", "chenavari", "cvc credit", "hayfin",
-    "park square", "benefit street", "bluebay", "man glenwood", "man group",
-    "distressed", "credit", "restructuring",
-}
-
-
-def _seniority_score(role: str) -> int:
-    r = role.lower()
-    if any(kw in r for kw in JUNIOR_KEYWORDS):
-        return 0
-    if any(kw in r for kw in MID_LEVEL_KEYWORDS):
-        return 2
-    return 1
-
-
-def _london_score(contact: dict) -> int:
-    """2 = explicit London signal, 1 = fund likely has London office, 0 = unknown/other."""
-    text = (_s(contact.get("Background")) + " " + _s(contact.get("Role")) +
-            " " + _s(contact.get("Tags"))).lower()
-    if any(kw in text for kw in LONDON_KEYWORDS):
-        return 2
-    fund = _s(contact.get("Fund")).lower()
-    if any(kw in fund for kw in LONDON_FUNDS):
-        return 1
-    return 0
-
-
-def _is_target_fund(fund_name: str) -> bool:
-    fn = fund_name.lower()
-    return any(kw in fn for kw in TARGET_FUNDS)
-
-
 def _fmt_key_contacts(contacts: list[dict]) -> str:
-    """London-based contacts at relevant funds, ranked by seniority."""
     relevant = [
         c for c in contacts
         if _is_target_fund(_s(c.get("Fund"))) and _s(c.get("Name"))
-        and _london_score(c) >= 1   # exclude contacts with no London signal
+        and _london_score(c) >= 1
     ]
     relevant.sort(key=lambda c: (
-        -_london_score(c),                            # explicit London first
-        -_seniority_score(_s(c.get("Role"))),         # mid-level first
+        -_london_score(c),
+        -_seniority_score(_s(c.get("Role"))),
         0 if c.get("_days_since") is None else 1,
         -(c.get("_days_overdue") or 0),
     ))
@@ -224,10 +258,10 @@ def _fmt_key_contacts(contacts: list[dict]) -> str:
 
 
 def generate_insights(context: dict) -> dict:
-    contacts   = context["never_met"] + context["overdue"] + context["on_track"]
-    overdue    = context["overdue"]
-    meetings   = context["recent_meetings"]
-    fund_rows  = context["fund_rows"]
+    contacts  = context["never_met"] + context["overdue"] + context["on_track"]
+    overdue   = context["overdue"]
+    meetings  = context["recent_meetings"]
+    fund_rows = context["fund_rows"]
 
     active_count = sum(
         1 for c in contacts
@@ -258,13 +292,14 @@ def generate_insights(context: dict) -> dict:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
-    # If JSON is truncated, attempt to close it so we still get a partial result
     try:
-        return json.loads(raw)
+        intel = json.loads(raw)
     except json.JSONDecodeError:
-        # Count open braces/brackets and close them
         raw = raw.rstrip().rstrip(",")
         open_brackets = raw.count("[") - raw.count("]")
         open_braces   = raw.count("{") - raw.count("}")
         raw += "]" * max(open_brackets, 0) + "}" * max(open_braces, 0)
-        return json.loads(raw)
+        intel = json.loads(raw)
+
+    intel["network_by_theme"] = group_contacts_by_theme(contacts)
+    return intel

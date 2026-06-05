@@ -216,14 +216,6 @@ def _build_page1(context, intel):
     else:
         story.append(_p("No London targets identified.", textColor=GRAY))
 
-    # ── Executive summary
-    summ = _s(intel.get("executive_summary"))
-    if summ:
-        story.append(Spacer(1, 0.2*cm))
-        story.append(_banner("NETWORK OVERVIEW"))
-        story.append(Spacer(1, 0.1*cm))
-        story.append(_p(summ, fontSize=8, leading=12,
-                        textColor=colors.HexColor("#374151")))
 
     story.append(PageBreak())
     return story
@@ -234,111 +226,88 @@ def _build_page1(context, intel):
 def _build_page2(context, intel):
     story = []
 
-    # ── Fund Coverage (top 20)
-    story.append(_banner("FUND COVERAGE — TOP 20"))
-    story.append(Spacer(1, 0.1*cm))
-
-    fund_rows = context["fund_rows"][:20]
-    STATUS = {
-        "HOT":  (GRN_BG, GRN_TC),
-        "WARM": (AMB_BG, AMB_TC),
-        "COLD": (RED_BG, RED_TC),
-        "—":    (L_GRAY, GRAY),
-    }
-    def fstatus(lt):
-        if lt is None: return "—"
-        if lt <= 14:   return "HOT"
-        if lt <= 45:   return "WARM"
-        return "COLD"
-
-    fund_cw = [CW - 2*cm - 2.5*cm - 2*cm, 2*cm, 2.5*cm, 2*cm]
-    frows   = [["Fund", "Contacts", "Last Touch", "Status"]]
-    for fr in fund_rows:
-        lt   = fr.get("last_touch_days")
-        stat = fstatus(lt)
-        frows.append([
-            _s(fr.get("fund", {}).get("Fund Name")),
-            str(len(fr.get("contacts", []))),
-            f"{lt}d ago" if lt is not None else "Never",
-            stat,
-        ])
-
-    ft = Table(frows, colWidths=fund_cw, repeatRows=1)
-    fs = [
-        ("BACKGROUND",     (0,0),  (-1,0),  NAVY),
-        ("TEXTCOLOR",      (0,0),  (-1,0),  W),
-        ("FONTNAME",       (0,0),  (-1,0),  "Helvetica-Bold"),
-        ("FONTSIZE",       (0,0),  (-1,-1), 8),
-        ("ALIGN",          (1,0),  (-1,-1), "CENTER"),
-        ("ROWBACKGROUNDS", (0,1),  (-1,-1), [W, OFF_WHITE]),
-        ("LINEBELOW",      (0,0),  (-1,-1), 0.5, L_GRAY),
-        ("TOPPADDING",     (0,0),  (-1,-1), 4),
-        ("BOTTOMPADDING",  (0,0),  (-1,-1), 4),
-        ("LEFTPADDING",    (0,0),  (-1,-1), 6),
-    ]
-    for i, row in enumerate(frows[1:], 1):
-        bg, tc = STATUS.get(row[3], (L_GRAY, GRAY))
-        fs += [("BACKGROUND", (3,i), (3,i), bg),
-               ("TEXTCOLOR",  (3,i), (3,i), tc),
-               ("FONTNAME",   (3,i), (3,i), "Helvetica-Bold")]
-    ft.setStyle(TableStyle(fs))
-    story.append(ft)
-    story.append(Spacer(1, 0.3*cm))
-
-    # ── Two-column: gaps | themes
-    gaps   = [_s(g) for g in intel.get("coverage_gaps",   [])[:4] if _s(g)]
-    themes = [_s(t) for t in intel.get("market_themes",   [])[:3] if _s(t)]
-
-    def bullets(items, icon, tc):
-        out = []
-        for item in items:
-            out.append(_p(f"{icon}  {item}", fontSize=8, textColor=tc, leading=12,
-                          leftIndent=4))
-            out.append(Spacer(1, 3))
-        return out
-
-    gap_col = [_p("<b>Coverage Gaps</b>", fontSize=8, fontName="Helvetica-Bold",
-                  leading=11)] + [Spacer(1,4)] + bullets(gaps, "⚑", colors.HexColor("#7c3aed"))
-    thm_col = [_p("<b>Market Themes</b>", fontSize=8, fontName="Helvetica-Bold",
-                  leading=11)] + [Spacer(1,4)] + bullets(themes, "◆", NAVY_MID)
-
-    half = (CW - 0.4*cm) / 2
-    tc_t = Table([[gap_col, Spacer(0.4*cm, 1), thm_col]], colWidths=[half, 0.4*cm, half])
-    tc_t.setStyle(TableStyle([
-        ("VALIGN", (0,0), (-1,-1), "TOP"),
-        ("TOPPADDING",    (0,0), (-1,-1), 0),
-        ("BOTTOMPADDING", (0,0), (-1,-1), 0),
-        ("LEFTPADDING",   (0,0), (-1,-1), 0),
-        ("RIGHTPADDING",  (0,0), (-1,-1), 0),
-    ]))
-    story.append(tc_t)
-    story.append(Spacer(1, 0.25*cm))
-
-    # ── Strategic observations
-    obs = [_s(o) for o in intel.get("strategic_insights", [])[:3] if _s(o)]
-    if obs:
-        story.append(_banner("STRATEGIC OBSERVATIONS"))
+    # ── Network by theme
+    # Group contacts into strategy buckets, names + fund only
+    by_theme = intel.get("network_by_theme", {})
+    if by_theme:
+        story.append(_banner("NETWORK BY THEME  ·  LONDON"))
         story.append(Spacer(1, 0.1*cm))
-        for o in obs:
-            story.append(_p(f"→  {o}", fontSize=8, leading=12,
-                            textColor=colors.HexColor("#374151"), leftIndent=4))
-            story.append(Spacer(1, 3))
-        story.append(Spacer(1, 0.15*cm))
 
-    # ── Recent meetings
+        THEME_COLORS = {
+            "Deep Distress / Special Sits": colors.HexColor("#b91c1c"),
+            "High Yield / Leveraged Credit": colors.HexColor("#0369a1"),
+            "Direct Lending / Private Credit": colors.HexColor("#15803d"),
+            "CLOs / Structured Credit": colors.HexColor("#7c3aed"),
+            "Multi-Strategy / Opportunistic": colors.HexColor("#92400e"),
+        }
+
+        for theme, contacts in by_theme.items():
+            tc = THEME_COLORS.get(theme, NAVY)
+            # Theme label
+            theme_row = Table(
+                [[_p(theme.upper(), fontSize=7, fontName="Helvetica-Bold",
+                     textColor=W, leading=9)]],
+                colWidths=[CW],
+            )
+            theme_row.setStyle(TableStyle([
+                ("BACKGROUND",    (0,0), (-1,-1), tc),
+                ("TOPPADDING",    (0,0), (-1,-1), 4),
+                ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                ("LEFTPADDING",   (0,0), (-1,-1), 8),
+            ]))
+            story.append(theme_row)
+
+            # Group by fund within theme
+            by_fund: dict[str, list] = {}
+            for c in contacts:
+                by_fund.setdefault(c["fund"], []).append(c)
+
+            rows = []
+            for fund, people in sorted(by_fund.items()):
+                names = ",  ".join(
+                    p["name"] + (f" ({p['role']})" if p.get("role") else "")
+                    for p in people
+                )
+                rows.append([
+                    _p(f"<b>{fund}</b>", fontSize=8, fontName="Helvetica-Bold",
+                       textColor=NAVY, leading=11),
+                    _p(names, fontSize=7.5, textColor=colors.HexColor("#374151"),
+                       leading=11),
+                ])
+
+            if rows:
+                t = Table(rows, colWidths=[3.5*cm, CW - 3.5*cm])
+                bg = [("BACKGROUND", (0,i), (-1,i), OFF_WHITE if i%2==0 else W)
+                      for i in range(len(rows))]
+                t.setStyle(TableStyle([
+                    ("VALIGN",        (0,0), (-1,-1), "TOP"),
+                    ("TOPPADDING",    (0,0), (-1,-1), 4),
+                    ("BOTTOMPADDING", (0,0), (-1,-1), 4),
+                    ("LEFTPADDING",   (0,0), (-1,-1), 6),
+                    ("LINEAFTER",     (0,0), (0,-1),  0.4, L_GRAY),
+                    ("LINEBELOW",     (0,0), (-1,-1), 0.3, L_GRAY),
+                    *bg,
+                ]))
+                story.append(t)
+            story.append(Spacer(1, 0.2*cm))
+
+    # ── Meetings
     mtgs = [m for m in context.get("recent_meetings", [])
-            if _s(m.get("Contact Name"))][:8]
+            if _s(m.get("Contact Name"))][:12]
     if mtgs:
-        story.append(_banner("RECENT MEETINGS"))
+        story.append(_banner("MEETINGS"))
         story.append(Spacer(1, 0.1*cm))
-        mcw   = [1.7*cm, 3.2*cm, 3.5*cm, CW - 1.7*cm - 3.2*cm - 3.5*cm]
+        mcw   = [1.7*cm, 3.2*cm, 3*cm, CW - 1.7*cm - 3.2*cm - 3*cm]
         mrows = [["Date", "Contact", "Fund", "Notes"]]
         for m in mtgs:
+            notes = _s(m.get("Notes"))
+            action = _s(m.get("Action Items"))
+            combined = notes + (f"  · {action}" if action else "")
             mrows.append([
                 _s(m.get("Date")),
                 _s(m.get("Contact Name")),
                 _s(m.get("Fund")),
-                _s(m.get("Notes"))[:80],
+                combined[:100],
             ])
         mt = Table(mrows, colWidths=mcw, repeatRows=1)
         mt.setStyle(TableStyle([
